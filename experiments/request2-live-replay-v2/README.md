@@ -9,6 +9,10 @@ The first network execution of this v2 fixture/oracle is frozen in
 [`PREREGISTRATION.md`](./PREREGISTRATION.md). It must be committed publicly
 before a credential is supplied to that run or any request from it is sent.
 
+That run is complete. Its mechanically validated, sanitized result and public
+receipt are in [`results/network-v1/RESULTS.md`](./results/network-v1/RESULTS.md).
+Raw trajectory artifacts remain local and are not published.
+
 ## Frozen task and primary endpoint
 
 1. Request1 must produce non-empty reasoning and exactly one `bash` tool call:

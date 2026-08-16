@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "mode": "request2-live-replay-v2-public-score-summary",
+  "source": {
+    "mechanicallyValidated": true,
+    "artifactStatus": "completed",
+    "transport": "explicit-network",
+    "plannedMainUnits": 12
+  },
+  "primaryEndpoint": "eligible AND exact request1 anchor AND request2 protocol success AND exact request2 tool call",
+  "pilotDiagnostic": {
+    "excludedFromMainEstimates": true,
+    "protocolSucceeded": 4,
+    "protocolTotal": 4,
+    "exactCorrect": 3,
+    "exactTotal": 4,
+    "byTreatment": {
+      "retain-same": { "correct": 1, "total": 1 },
+      "retain-new": { "correct": 0, "total": 1 },
+      "drop-same": { "correct": 1, "total": 1 },
+      "drop-new": { "correct": 1, "total": 1 }
+    }
+  },
+  "main": {
+    "overall": {
+      "correct": 11,
+      "total": 12,
+      "correctRate": 0.9166666666666666
+    },
+    "stageCounts": {
+      "eligible": 12,
+      "request1AnchorPassed": 12,
+      "request2ProtocolSucceeded": 12,
+      "request2ExactToolCallPassed": 11
+    },
+    "byTreatment": {
+      "retain-same": { "correct": 3, "total": 3, "correctRate": 1 },
+      "retain-new": { "correct": 3, "total": 3, "correctRate": 1 },
+      "drop-same": { "correct": 3, "total": 3, "correctRate": 1 },
+      "drop-new": { "correct": 2, "total": 3, "correctRate": 0.6666666666666666 }
+    },
+    "descriptiveContrasts": {
+      "retainMinusDrop": 0.16666666666666663,
+      "sameMinusNew": 0.16666666666666663,
+      "differenceInDifferences": -0.33333333333333337
+    },
+    "observedFailures": [
+      {
+        "treatment": "drop-new",
+        "block": 3,
+        "reason": "request2 exact arguments mismatch"
+      }
+    ]
+  }
+}

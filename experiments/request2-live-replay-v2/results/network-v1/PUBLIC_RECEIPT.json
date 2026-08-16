@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "study": "request2-live-replay-v2-network-v1",
+  "preregistration": {
+    "commit": "f4f8d4ef9340a74abef39a5945aba48a58cbaa83",
+    "implementationCommit": "d070fb21924c86050320fd01b70c84e2f97c3ee4"
+  },
+  "harness": {
+    "commit": "47f943859bef60e4160492346772ded9b24f765a",
+    "platform": "darwin-arm64"
+  },
+  "binding": {
+    "fixtureRawSha256": "f1003ff0c0597a3bc2e66e2dc487e22b568d93a35b410438a428312627b093f0",
+    "oracleRawSha256": "4c95ab09260e946835695e4ae4cce97d854c6bf32e05e87cdfeb7d061b398f91",
+    "oracleCanonicalSha256": "5bf37d3644146d26f2cba81171744626da3882be74a58da9a9dca42f1004430d",
+    "exactMinimalSurfaceSha256": "0fdd6bb5e6d5c44f5292f98bca22dc6a0313e2ce645743584849b73f5223133c"
+  },
+  "controls": {
+    "transport": "explicit-network",
+    "provider": "deepseek-official",
+    "modelAlias": "deepseek-v4-pro",
+    "baseUrl": "https://api.deepseek.com",
+    "reasoningEffort": "max",
+    "temperature": null,
+    "maxTokensPerResponse": 768,
+    "mainRepeat": 3,
+    "seed": "request2-v2-network-20260816-preregistered-v1",
+    "toolExecution": "none; frozen fixture results only"
+  },
+  "phaseA": {
+    "artifactIntegritySha256": "85f1d9554a9ad59d92a8c15d7e4f25316df08707b3aaf2d4a116313fb1d2b952",
+    "status": "pilot-passed",
+    "gateDecision": "GO",
+    "protocolSuccessByTreatment": {
+      "retain-same": true,
+      "retain-new": true,
+      "drop-same": true,
+      "drop-new": true
+    },
+    "createdAt": "2026-08-16T14:46:44.775Z",
+    "finishedAt": "2026-08-16T14:47:26.276Z"
+  },
+  "phaseB": {
+    "artifactIntegritySha256": "bb9d05ad926fdcd6f3df84c68520602c996ced271e2dc91361806011469b754d",
+    "status": "completed",
+    "mainSamples": 12,
+    "processExitCode": 0,
+    "createdAt": "2026-08-16T14:47:52.176Z",
+    "finishedAt": "2026-08-16T14:50:09.999Z"
+  },
+  "notes": [
+    "Artifact digests are opaque identifiers, not signatures.",
+    "Raw artifacts contain private trajectory and identity-derived data and are not published."
+  ]
+}
