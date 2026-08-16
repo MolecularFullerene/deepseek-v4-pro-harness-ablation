@@ -6,6 +6,10 @@
 
 ## 主要结果
 
+- 预注册的 schema-bridge 2×2 中，四臂 minimal-like 比例为 65.0%、52.5%、
+  35.0%、22.5%。one-shot description 相对 persistent description 的主效应为
+  −30.0 个百分点（Holm-adjusted `p = 0.000330`）；parameters 主效应与交互均未
+  通过确认性检验。终点仅为词法轨迹标签，不是能力分数。
 - 固定样本量首请求 2×2 消融中，persistent shell schema bundle 为
   17/20 minimal-like，one-shot shell 为 6/20；file-tool 主效应证据弱。
 - 40/40 首动作均合法且任务相关，因此 `We need / Let me` 只能作为轨迹
@@ -83,9 +87,9 @@ executor 的同时，只交叉替换 model-visible `bash` description 与 parame
 不能用于端到端能力测试。设计与 schema hash 见
 [`experiments/schema-bridge/`](./experiments/schema-bridge/README.md)。
 
-下一次正式联网采样使用独立的 guarded `schema-bridge-live` 命令与冻结 oracle；
+已完成的正式联网采样使用独立的 guarded `schema-bridge-live` 命令与冻结 oracle；
 它不是通用 bridge batch。4-cell pilot、10-task × 4-identity × 4-arm allocation、
-只读/零 dispatch 安全边界和 publication-only scorer 见
+只读/零 dispatch 安全边界、publication-only scorer 和 `network-v1` 结果见
 [`experiments/schema-bridge-live/`](./experiments/schema-bridge-live/README.md)。
 
 ## 无 API 的 mount smoke
@@ -183,6 +187,9 @@ tool/arguments；结果、限制和 publication boundary 见
 
 ## 当前实验报告
 
+- [`experiments/schema-bridge-live/results/network-v1/RESULTS.md`](./experiments/schema-bridge-live/results/network-v1/RESULTS.md)：
+  固定 executor 的 description × parameters 四臂预注册消融；只有 description
+  bundle 主效应通过 Holm 校正后的确认性检验。
 - [`reports/SCREENING_REPORT.md`](./reports/SCREENING_REPORT.md)：官方 exact Minimal 与本机历史 `bash/read` surrogate 的首请求筛查。
 - [`reports/FACTORIAL_REPORT.md`](./reports/FACTORIAL_REPORT.md)：persistent/one-shot `bash` × editor/read 的固定样本量 2×2 消融；shell schema bundle 是本轮词法轨迹偏移中最大的观测边际关联。
 - [`reports/REQUEST2_PILOT_REPORT.md`](./reports/REQUEST2_PILOT_REPORT.md)：retain/drop reasoning × same/new session 的四格独立-source live protocol pilot；四格均被 API 接受且简单答案正确，主样本未自动启动。

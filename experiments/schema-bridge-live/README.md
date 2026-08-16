@@ -9,6 +9,10 @@ prompt、工具顺序和执行器均保持不变。主要终点是首个 assista
 正式联网前冻结的设计、停止规则和统计终点见
 [`PREREGISTRATION.md`](./PREREGISTRATION.md)。
 
+已完成的 `network-v1` 结果见
+[`results/network-v1/RESULTS.md`](./results/network-v1/RESULTS.md)；规范的公开数据是
+strict scorer 生成的 [`network-v1-summary.json`](./network-v1-summary.json)。
+
 原始 artifact 含模型 trajectory 和运行标识，**禁止发布**。只能发布本目录严格
 scorer 生成的 allowlisted summary；详见[发布边界](#发布边界)。
 
