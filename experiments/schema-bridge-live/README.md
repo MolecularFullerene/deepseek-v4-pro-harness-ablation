@@ -6,6 +6,9 @@
 prompt、工具顺序和执行器均保持不变。主要终点是首个 assistant trajectory 的
 `minimal-like` 词法风格标签，不代表任务能力、回答质量或模型内部机制。
 
+正式联网前冻结的设计、停止规则和统计终点见
+[`PREREGISTRATION.md`](./PREREGISTRATION.md)。
+
 原始 artifact 含模型 trajectory 和运行标识，**禁止发布**。只能发布本目录严格
 scorer 生成的 allowlisted summary；详见[发布边界](#发布边界)。
 
