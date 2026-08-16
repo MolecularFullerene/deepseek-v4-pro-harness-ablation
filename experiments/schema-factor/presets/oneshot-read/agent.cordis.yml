@@ -1,0 +1,21 @@
+# Factor A: Standard one-shot bash schema.
+# Factor B: Standard read schema (write/edit register underneath but are hidden
+# from the first request by schema-surface).
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: You are a helpful software engineer assistant.
+    complete: true
+    includeRuntimeContext: false
+
+- id: schema-surface
+  name: ./schema-surface.mjs
+  config:
+    expectedTools: [bash, read]
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'

@@ -1,0 +1,81 @@
+{
+  "request1": {
+    "events": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "reasoning_content": "We need inspect before answering."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_mock_request1",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"cat /safe/mock/workspace/CASE.md\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 20,
+          "completion_tokens": 8
+        }
+      }
+    ]
+  },
+  "request2": {
+    "pilot": {
+      "drop-same": {
+        "status": 400,
+        "json": {
+          "error": {
+            "message": "mock protocol rejected missing reasoning_content",
+            "type": "invalid_request_error",
+            "code": "invalid_request"
+          }
+        }
+      },
+      "drop-new": {
+        "status": 400,
+        "json": {
+          "error": {
+            "message": "mock protocol rejected missing reasoning_content",
+            "type": "invalid_request_error",
+            "code": "invalid_request"
+          }
+        }
+      }
+    },
+    "default": {
+      "events": [
+        {
+          "choices": [
+            {
+              "delta": {
+                "content": "{\"workspace\":\"/safe/mock/workspace\",\"next_action\":\"inspect_top_level_files\"}"
+              },
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 1,
+            "completion_tokens": 1
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "provider": "deepseek-official",
+  "model": "deepseek-v4-pro",
+  "anonymousUserId": "00000000-0000-4000-8000-000000000001",
+  "originalSessionId": "offline-anchor-session",
+  "newSessionId": "offline-fork-session",
+  "system": "You are a helpful software engineer assistant.",
+  "reasoningEffort": "max",
+  "temperature": 0.2,
+  "maxTokens": 4096,
+  "stop": [
+    "<END>"
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "source": {
+        "kind": "user"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "Inspect the workspace before answering."
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "source": {
+        "kind": "plugin",
+        "plugin": "offline-fixture"
+      },
+      "content": [
+        {
+          "type": "reasoning",
+          "text": "We need inspect the workspace before deciding."
+        },
+        {
+          "type": "tool-call",
+          "id": "call_fixture_1",
+          "name": "bash",
+          "arguments": "{\"command\":\"pwd\"}"
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "source": {
+        "kind": "plugin",
+        "plugin": "offline-fixture"
+      },
+      "content": [
+        {
+          "type": "tool-result",
+          "toolCallId": "call_fixture_1",
+          "content": [
+            {
+              "type": "text",
+              "text": "/workspace"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "bash",
+      "description": "Run commands in a bash shell",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "Command to execute"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "read",
+      "description": "Read a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "dsh-lab-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated event-level experiment runner for DeepSeek Harness presets",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "list": "node src/cli.mjs list",
+    "doctor": "node src/cli.mjs doctor"
+  },
+  "license": "MIT"
+}

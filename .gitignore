@@ -1,0 +1,15 @@
+runs/
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.credentials.*
+node_modules/
+coverage/
+tmp/
+experiments/**/artifacts/
+prompts/project2-v4.1b.txt
+experiments/request2-live-replay/artifacts/
+experiments/request2-replay/artifacts/
+experiments/schema-factor/artifacts/

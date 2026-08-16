@@ -1,0 +1,99 @@
+{
+  "request1": {
+    "events": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "role": "assistant",
+              "content": null,
+              "reasoning_content": ""
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "reasoning_content": "We need inspect the workspace safely before answering."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_mock_request1",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"cat /safe/mock/workspace/CASE.md\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 50,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 9
+          }
+        }
+      }
+    ]
+  },
+  "request2": {
+    "default": {
+      "events": [
+        {
+          "choices": [
+            {
+              "delta": {
+                "reasoning_content": "We need use the fixed observation and answer concisely."
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {
+                "content": "{\"workspace\":\"/safe/mock/workspace\",\"next_action\":\"inspect_top_level_files\"}"
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 80,
+            "completion_tokens": 18,
+            "completion_tokens_details": {
+              "reasoning_tokens": 10
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,3 @@
+Inspect the current repository before answering.
+First determine its top-level structure, then locate and read the project README.
+Do not guess from prior knowledge. Use the available tools first.
