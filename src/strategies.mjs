@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const localPreset = path => resolve(PACKAGE_ROOT, 'experiments', 'schema-factor', 'presets', path)
+const schemaBridgePreset = resolve(PACKAGE_ROOT, 'experiments', 'schema-bridge', 'preset')
 
 /** Strategy catalog. Community paths use the sibling workspace; built-in cells use this package. */
 export const STRATEGIES = Object.freeze({
@@ -73,6 +74,38 @@ export const STRATEGIES = Object.freeze({
     status: 'experimental',
     evidence: '2x2 cell: Standard one-shot bash schema + Standard read under exact Minimal system.',
   }),
+  'schema-bridge-pp': Object.freeze({
+    preset: 'schema-bridge-pp',
+    source: schemaBridgePreset,
+    status: 'diagnostic-only',
+    evidence: 'Fixed persistent executor; persistent description × persistent parameters; execution is blocked.',
+    schemaBridgeArm: 'pp',
+    experimentalFactors: Object.freeze({ description: 'persistent', parameters: 'persistent' }),
+  }),
+  'schema-bridge-po': Object.freeze({
+    preset: 'schema-bridge-po',
+    source: schemaBridgePreset,
+    status: 'diagnostic-only',
+    evidence: 'Fixed persistent executor; persistent description × one-shot parameters; execution is blocked.',
+    schemaBridgeArm: 'po',
+    experimentalFactors: Object.freeze({ description: 'persistent', parameters: 'one-shot' }),
+  }),
+  'schema-bridge-op': Object.freeze({
+    preset: 'schema-bridge-op',
+    source: schemaBridgePreset,
+    status: 'diagnostic-only',
+    evidence: 'Fixed persistent executor; one-shot description × persistent parameters; execution is blocked.',
+    schemaBridgeArm: 'op',
+    experimentalFactors: Object.freeze({ description: 'one-shot', parameters: 'persistent' }),
+  }),
+  'schema-bridge-oo': Object.freeze({
+    preset: 'schema-bridge-oo',
+    source: schemaBridgePreset,
+    status: 'diagnostic-only',
+    evidence: 'Fixed persistent executor; one-shot description × one-shot parameters; execution is blocked.',
+    schemaBridgeArm: 'oo',
+    experimentalFactors: Object.freeze({ description: 'one-shot', parameters: 'one-shot' }),
+  }),
 })
 
 export const DEFAULT_COMPARISON = Object.freeze([
@@ -122,6 +155,10 @@ export function expectedFirstSurface(strategyName, platform = process.platform) 
     case 'minimal-anchored':
     case 'schema-factor-persistent-editor':
     case 'schema-factor-oneshot-editor':
+    case 'schema-bridge-pp':
+    case 'schema-bridge-po':
+    case 'schema-bridge-op':
+    case 'schema-bridge-oo':
       return ['bash', 'str_replace_editor']
     case 'historical-anchored':
       return [shell, 'read']

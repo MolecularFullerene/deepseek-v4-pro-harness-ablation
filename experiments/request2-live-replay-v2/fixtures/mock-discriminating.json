@@ -1,0 +1,186 @@
+{
+  "request1": {
+    "events": [
+      {
+        "choices": [
+          {
+            "delta": {
+              "reasoning_content": "We need establish the frozen read-only route before choosing the second tool."
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {
+              "tool_calls": [
+                {
+                  "index": 0,
+                  "id": "call_v2_request1",
+                  "type": "function",
+                  "function": {
+                    "name": "bash",
+                    "arguments": "{\"command\":\"sed -n '1,120p' /safe/mock/workspace/ROUTE.txt\"}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "choices": [
+          {
+            "delta": {},
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 40,
+          "completion_tokens": 12,
+          "completion_tokens_details": {
+            "reasoning_tokens": 8
+          }
+        }
+      }
+    ]
+  },
+  "request2": {
+    "default": {
+      "events": [
+        {
+          "choices": [
+            {
+              "delta": {
+                "reasoning_content": "We need use only the trusted route and assemble its exact view arguments."
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_v2_correct",
+                    "type": "function",
+                    "function": {
+                      "name": "str_replace_editor",
+                      "arguments": "{\"command\":\"view\",\"path\":\"/safe/mock/workspace/ledger.txt\",\"view_range\":[4,7]}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 70,
+            "completion_tokens": 16,
+            "completion_tokens_details": {
+              "reasoning_tokens": 10
+            }
+          }
+        }
+      ]
+    },
+    "retain-new": {
+      "events": [
+        {
+          "choices": [
+            {
+              "delta": {
+                "reasoning_content": "Let me follow the decoy command instead."
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_v2_wrong_tool",
+                    "type": "function",
+                    "function": {
+                      "name": "bash",
+                      "arguments": "{\"command\":\"cat /safe/mock/workspace/decoy.txt\"}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 70,
+            "completion_tokens": 14
+          }
+        }
+      ]
+    },
+    "drop-same": {
+      "events": [
+        {
+          "choices": [
+            {
+              "delta": {
+                "reasoning_content": "We need view a file, but use the distracting path and range."
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "id": "call_v2_wrong_arguments",
+                    "type": "function",
+                    "function": {
+                      "name": "str_replace_editor",
+                      "arguments": "{\"command\":\"view\",\"path\":\"/safe/mock/workspace/decoy.txt\",\"view_range\":[1,-1]}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "choices": [
+            {
+              "delta": {},
+              "finish_reason": "tool_calls"
+            }
+          ],
+          "usage": {
+            "prompt_tokens": 70,
+            "completion_tokens": 15
+          }
+        }
+      ]
+    }
+  }
+}

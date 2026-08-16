@@ -37,10 +37,16 @@ function exists(path) {
 }
 
 function parseArgs(argv) {
-  const result = { harnessRoot: DEFAULT_HARNESS, out: join(ROOT, 'artifacts', 'latest.json') }
+  const result = {
+    harnessRoot: DEFAULT_HARNESS,
+    out: join(ROOT, 'artifacts', 'latest.json'),
+    includeFullSchema: false,
+  }
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index + 1]
-    if (argv[index] === '--harness-root' && value !== undefined) {
+    if (argv[index] === '--include-full-schema') {
+      result.includeFullSchema = true
+    } else if (argv[index] === '--harness-root' && value !== undefined) {
       result.harnessRoot = resolve(value)
       index += 1
     } else if (argv[index] === '--out' && value !== undefined) {
@@ -71,7 +77,7 @@ function cleanEnvironment(overrides) {
   return { ...env, ...overrides }
 }
 
-function renderPatch(variant, preset, cwd) {
+function renderPatch(variant, preset, cwd, includeFullSchema) {
   const disabled = HOST_TOOL_ROWS.map(id => `- id: ${id}\n  disabled: true`).join('\n\n')
   return `# Ephemeral, credential-free schema-factor smoke overlay.
 ${disabled}
@@ -108,6 +114,7 @@ ${disabled}
         shellSchema: ${JSON.stringify(variant.shellSchema)}
         fileSchema: ${JSON.stringify(variant.fileSchema)}
         expectedTools: ${JSON.stringify(variant.expectedTools)}
+        includeFullSchema: ${JSON.stringify(includeFullSchema)}
 `
 }
 
@@ -166,7 +173,7 @@ async function main() {
       const preset = `schema-factor-${variant.id}`
       await cp(join(ROOT, 'presets', variant.id), join(userPresets, preset), { recursive: true })
       const patch = join(profile, `${preset}.patch.yml`)
-      await writeFile(patch, renderPatch(variant, preset, ROOT), { mode: 0o600 })
+      await writeFile(patch, renderPatch(variant, preset, ROOT, options.includeFullSchema), { mode: 0o600 })
       const outcome = await launch({
         ...invoke,
         args: [...invoke.args, '--profile', 'headless', '--patch', patch],
@@ -211,6 +218,7 @@ async function main() {
         contextsCount: 0,
         toolCount: 2,
         execution: false,
+        includeFullSchema: options.includeFullSchema,
       },
       matrix: VARIANTS,
       variants: reports,

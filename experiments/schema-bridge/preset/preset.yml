@@ -1,0 +1,3 @@
+name: Schema bridge — diagnostic only
+description: First-request description × parameters bridge with a fixed persistent executor and execution guard.
+order: 92

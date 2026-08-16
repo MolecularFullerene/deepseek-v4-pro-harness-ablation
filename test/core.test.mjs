@@ -40,6 +40,11 @@ test('strategy groups exclude known-broken presets by default', () => {
     strategySourcePath('/unrelated/workspace', 'schema-factor-persistent-editor'),
     fileURLToPath(new URL('../experiments/schema-factor/presets/persistent-editor', import.meta.url)),
   )
+  assert.equal(
+    strategySourcePath('/unrelated/workspace', 'schema-bridge-po'),
+    fileURLToPath(new URL('../experiments/schema-bridge/preset', import.meta.url)),
+  )
+  assert.deepEqual(expectedFirstSurface('schema-bridge-op', 'darwin'), ['bash', 'str_replace_editor'])
 })
 
 test('child environments strip credential-like values without dumping the parent environment', () => {

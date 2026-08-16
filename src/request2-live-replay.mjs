@@ -225,6 +225,7 @@ function publicUnit(unit) {
     ...(unit.block === undefined ? {} : { block: unit.block, position: unit.position }),
     treatment: { ...unit.treatment },
     sourceSessionIdSha256: sha256(unit.sourceSessionId),
+    newSessionIdSha256: sha256(unit.newSessionId),
     request2SessionIdSha256: sha256(request2SessionId),
     sessionRelationCheck: unit.treatment.session === 'same'
       ? request2SessionId === unit.sourceSessionId

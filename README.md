@@ -77,6 +77,12 @@ node src/cli.mjs list
 
 `minimal-anchored`、`router-standard` 和 `router-spec` 也可显式选择，但不进入默认集合。当前 checkout 的 `minimal-anchored` 已由真实 mount smoke 证实不可用：persistent 与 Standard `bash` 在同一 scope 重名注册（Windows 另有 inspector 兼容问题）。两个 router 可以挂载，但 live 插件在首条真实 `user/message` 上调用了未导入的 `extractText`；`router-spec` 的首轮目录还随任务分类变化，因此 task-free smoke 不宣称固定预期。批处理会记录单项失败并继续剩余任务。
 
+另有四条 `schema-bridge-{pp,po,op,oo}` 诊断策略，在固定真实 persistent
+executor 的同时，只交叉替换 model-visible `bash` description 与 parameters。
+它们有 guard 与 dispatch tripwire，禁止执行任何工具，只能用于首响应轨迹消融；
+不能用于端到端能力测试。设计与 schema hash 见
+[`experiments/schema-bridge/`](./experiments/schema-bridge/README.md)。
+
 ## 无 API 的 mount smoke
 
 这会实际启动 DSH、挂载 preset，并经过 `system-prompt/assemble` 读取首请求工具面，不调用模型：
@@ -161,15 +167,19 @@ npm test
 
 `request2-replay` 是完全离线的四格 serializer 证明；`request2-live-replay` 则使用真实官方 `DeepSeekAdapter` transport，但明确不是 Agent/Session fork。后者采用独立 request1 source 的区组随机设计：每个 source 只 live 发送 `retain/drop reasoning × same/new session` 中预先分配的一格，避免把四格顺序写进同一个可能有状态的服务端 session。默认每格 3 次；主样本前另跑四个独立 source 的完整 protocol pilot。四格全成功才进入主样本；只有两个 retain 控制成功且 drop cell 出现 HTTP 400，才归类为 drop 协议拒绝，其余失败均不可识别。首次联网应加 `--pilot-only`，通过后也不会自动进入主样本。
 
-live 命令强制 `--api-key-stdin`，不会回退到任何 key 环境变量；无 `--mock-script` 时还必须显式给出 `--allow-network`。fixture 的 system 与 persistent `bash` / `str_replace_editor` 完整 schemas 来自真实官方 Minimal mount，不是手工近似；命令会在读取 key 前重新做一次 keyless real mount，逐字/逐 schema/逐 SHA/commit/platform 断言相等。随后才写入 0600 planned manifest，冻结 seed、区组顺序、样本量、session identity hash、停止规则和 `expectedJson`。第二轮的协议成功与答案正确分开报告；答案通过“提取唯一 JSON 对象 + 与预注册 expectedJson 字段/值完全相等”机械评分，`We need` / `Let me` 只作诊断。
+live 命令强制 `--api-key-stdin`，不会回退到任何 key 环境变量；无 `--mock-script` 时还必须显式给出 `--allow-network`。fixture 的 system 与 persistent `bash` / `str_replace_editor` 完整 schemas 来自真实官方 Minimal mount，不是手工近似；命令会在读取 key 前重新做一次 keyless real mount，逐字/逐 schema/逐 SHA/commit/platform 断言相等。随后才写入 0600 planned manifest，冻结 seed、区组顺序、样本量、session identity hash、停止规则和 `expectedJson`。第二轮的协议成功与答案正确分开报告；答案通过“提取唯一 JSON 对象 + 与预注册 expectedJson 字段/值完全相等”机械评分，`We need` / `Let me` 只作诊断。`--oracle PATH` 用于严格验证并绑定本仓 v2 机械评分 oracle；它会在读取凭据和发送请求前，把 oracle 的 canonical SHA-256 一并冻结进 manifest 与 config fingerprint。
 
 完整 mock/live 用法、安全边界和输出字段见 `experiments/request2-live-replay/README.md`。
+更具区分力的只读两阶段 tool-routing fixture、严格 artifact validator 与补充 scorer
+见 [`experiments/request2-live-replay-v2/`](./experiments/request2-live-replay-v2/README.md)；
+它目前只有离线判别性 mock 证据，没有新的真实 API 结果。
 
 ## 当前实验报告
 
 - [`reports/SCREENING_REPORT.md`](./reports/SCREENING_REPORT.md)：官方 exact Minimal 与本机历史 `bash/read` surrogate 的首请求筛查。
 - [`reports/FACTORIAL_REPORT.md`](./reports/FACTORIAL_REPORT.md)：persistent/one-shot `bash` × editor/read 的固定样本量 2×2 消融；shell schema bundle 是本轮词法轨迹偏移中最大的观测边际关联。
 - [`reports/REQUEST2_PILOT_REPORT.md`](./reports/REQUEST2_PILOT_REPORT.md)：retain/drop reasoning × same/new session 的四格独立-source live protocol pilot；四格均被 API 接受且简单答案正确，主样本未自动启动。
+- [`reports/DSH_RC6_PROVENANCE.md`](./reports/DSH_RC6_PROVENANCE.md)：npm `0.1.0-rc.6` 与 GitHub `47f9438` 的发布溯源及逐字节抽样比较；所核对运行时文件未观察到代码变化。
 
 ## 限制
 

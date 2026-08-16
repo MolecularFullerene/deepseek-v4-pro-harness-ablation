@@ -47,6 +47,7 @@ Core options:
 
 Guarded request2 options:
   --mock-script PATH          Exercise the live transport path with in-process SSE fixtures
+  --oracle PATH               Validate and bind the frozen v2 JSON oracle before credential read
   --allow-network             Explicit gate required when --mock-script is absent
   --pilot-only                Run the four-cell protocol pilot, never the main sample
   --max-tokens INTEGER        Required explicit cost bound for guarded network replay
@@ -116,6 +117,7 @@ function parse(argv) {
       case '--task-file': options.taskFile = resolve(take(argv, index, arg)); index += 1; break
       case '--fixture': options.fixture = resolve(take(argv, index, arg)); index += 1; break
       case '--mock-script': options.mockScript = resolve(take(argv, index, arg)); index += 1; break
+      case '--oracle': options.oracle = resolve(take(argv, index, arg)); index += 1; break
       case '--allow-network': options.allowNetwork = true; break
       case '--pilot-only': options.pilotOnly = true; break
       case '--stop-after-first-assistant': options.stopAfterFirstAssistant = true; break

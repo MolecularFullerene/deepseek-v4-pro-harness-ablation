@@ -10,6 +10,9 @@ import { verifyOfficialMinimalSurface } from './minimal-surface-verifier.mjs'
 import {
   buildLiveReplayPlan, publicLiveReplayPlan, validateLiveReplayFixture,
 } from './request2-live-replay.mjs'
+import {
+  validateV2Oracle, validateV2Preflight, v2ArtifactIntegritySha256,
+} from '../experiments/request2-live-replay-v2/score-artifact.mjs'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const WORKER = join(PACKAGE_ROOT, 'runtime', 'request2-live-replay-worker.mjs')
@@ -107,6 +110,12 @@ export async function request2LiveReplayCommand(options) {
   const seed = options.seed ?? randomBytes(16).toString('hex')
   const fixtureText = await readFile(options.fixture, 'utf8')
   const fixture = validateLiveReplayFixture(JSON.parse(fixtureText))
+  const fixtureSha256 = sha256(fixtureText)
+  const externalOracleText = options.oracle === undefined ? undefined : await readFile(options.oracle, 'utf8')
+  const externalOracle = externalOracleText === undefined
+    ? undefined
+    : validateV2Oracle(JSON.parse(externalOracleText))
+  const externalOracleSha256 = externalOracle === undefined ? null : sha256(canonicalJson(externalOracle))
   const surfaceVerification = await verifyOfficialMinimalSurface({
     harnessRoot: options.harnessRoot,
     fixture,
@@ -115,9 +124,28 @@ export async function request2LiveReplayCommand(options) {
   const mockScript = options.mockScript === undefined
     ? undefined
     : JSON.parse(await readFile(options.mockScript, 'utf8'))
+  const mockScriptSha256 = mockScript === undefined ? null : sha256(canonicalJson(mockScript))
+  const transport = mockScript === undefined ? 'explicit-network' : 'in-process-mock'
+  const harnessCommit = gitHead(options.harnessRoot)
+  if (externalOracle !== undefined) {
+    validateV2Preflight({
+      oracleInput: externalOracle,
+      fixtureSha256,
+      harnessCommit,
+      exactMinimalSurface: surfaceVerification,
+      transport,
+      provider: options.provider,
+      model: options.model,
+      baseUrl,
+      mockScriptSha256,
+      reasoningEffort: options.reasoningEffort,
+      temperature: options.temperature ?? null,
+      maxTokens: options.maxTokens ?? null,
+      repeat,
+    })
+  }
   const privatePlan = buildLiveReplayPlan({ repeat, seed })
   const plan = publicLiveReplayPlan(privatePlan)
-  const fixtureSha256 = sha256(fixtureText)
   const configFingerprint = sha256(canonicalJson({
     provider: options.provider,
     model: options.model,
@@ -129,15 +157,17 @@ export async function request2LiveReplayCommand(options) {
     pilotOnly: options.pilotOnly === true,
     seed,
     fixtureSha256,
+    mockScriptSha256,
     surfaceSha256: surfaceVerification.surfaceSha256,
     planSha256: plan.sha256,
+    externalOracleSha256,
   }))
   const planned = {
     schemaVersion: 1,
     mode: 'official-adapter-request2-transport-replay',
     status: 'planned',
     createdAt: new Date().toISOString(),
-    transport: mockScript === undefined ? 'explicit-network' : 'in-process-mock',
+    transport,
     credentialMode: 'api-key-stdin only; process memory only; never argv/environment/artifact',
     provider: options.provider,
     model: options.model,
@@ -149,6 +179,7 @@ export async function request2LiveReplayCommand(options) {
     pilotOnly: options.pilotOnly === true,
     seed,
     fixtureSha256,
+    mockScriptSha256,
     configFingerprint,
     anonymousUserIdSha256: sha256(fixture.anonymousUserId),
     exactMinimalSurface: surfaceVerification,
@@ -159,9 +190,10 @@ export async function request2LiveReplayCommand(options) {
       expectedJsonSha256: sha256(canonicalJson(fixture.expectedJson)),
       protocolSuccessIsSeparate: true,
       reasoningPrefixLabelsAreDiagnosticOnly: true,
+      externalOracleSha256,
     },
     plan,
-    harness: { commit: gitHead(options.harnessRoot) },
+    harness: { commit: harnessCommit },
     platform: { os: process.platform, arch: process.arch, node: process.version },
     limitation: 'Guarded transport-level serializer replay with independent request1 source sessions; not a DSH Agent/Session fork.',
   }
@@ -171,8 +203,10 @@ export async function request2LiveReplayCommand(options) {
   let secret = ''
   try {
     secret = await readSecret(process.stdin)
-    if (fixtureText.includes(secret) || JSON.stringify(mockScript ?? {}).includes(secret)) {
-      throw new Error('refusing to run because the stdin credential also appears in a non-secret fixture file')
+    if (fixtureText.includes(secret)
+      || JSON.stringify(mockScript ?? {}).includes(secret)
+      || (externalOracleText?.includes(secret) ?? false)) {
+      throw new Error('refusing to run because the stdin credential also appears in a non-secret experiment file')
     }
     const { report, process: processFacts } = await spawnWorker({
       harnessRoot: options.harnessRoot,
@@ -193,13 +227,17 @@ export async function request2LiveReplayCommand(options) {
       },
     })
     if (report.planSha256 !== plan.sha256) throw new Error('worker plan fingerprint does not match the pre-frozen manifest')
-    const artifact = redactValue({
+    const artifactPayload = redactValue({
       ...planned,
       ...report,
       plan,
       finishedAt: new Date().toISOString(),
       process: processFacts,
     }, [secret])
+    const artifact = {
+      ...artifactPayload,
+      integritySha256: v2ArtifactIntegritySha256(artifactPayload),
+    }
     await writeJson(options.out, artifact)
     process.stdout.write(`request2 guarded transport replay: ${options.out}\n`)
     process.stdout.write(`status: ${artifact.status}; main samples: ${artifact.samples?.length ?? 0}\n`)

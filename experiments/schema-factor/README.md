@@ -27,6 +27,14 @@ node experiments/schema-factor/smoke.mjs
 
 artifact 还会验证 system 四格一致、context 全为 0、工具数全为 2、同一 schema 跨另一因子保持一致，以及 persistent/one-shot `bash` schema 确实不同。可用 `--out PATH` 或 `--harness-root PATH` 覆盖路径。
 
+需要构造逐组件 bridge schema 时，可显式运行：
+
+```sh
+node experiments/schema-factor/smoke.mjs --include-full-schema
+```
+
+此选项只在被 `.gitignore` 排除的本地 artifact 中附加官方工具的完整 `description` 和 `parameters`；它不读取 API key、不选择线上模型，也不发送网络请求。默认输出仍只保留长度和哈希，避免后续误把大段生成物纳入公开数据。
+
 ## 后续接入主 CLI
 
 本目录没有修改现有策略表或 CLI。接入时可把四个自包含目录复制到临时 `$DSH_HOME/.agent-presets/`，分别命名为 `schema-factor-persistent-editor`、`schema-factor-persistent-read`、`schema-factor-oneshot-editor`、`schema-factor-oneshot-read`，再在策略表中把这四个 preset id 注册为实验策略。Live 阶段应继续使用主 CLI 的 stdin credential、固定 batch identity、随机交错、事件级输出和脱敏逻辑；本 smoke runner 只用于无 API 的 schema 验证。

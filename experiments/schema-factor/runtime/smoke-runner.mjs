@@ -24,7 +24,7 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
 }
 
-function toolFact(tool) {
+function toolFact(tool, includeFullSchema) {
   const parameters = canonical(tool.parameters)
   const schema = canonical({ name: tool.name, description: tool.description, parameters: tool.parameters })
   return {
@@ -35,6 +35,9 @@ function toolFact(tool) {
     descriptionChars: tool.description.length,
     parametersSha256: sha256(parameters),
     parametersChars: parameters.length,
+    ...(includeFullSchema ? {
+      surface: { description: tool.description, parameters: tool.parameters },
+    } : {}),
   }
 }
 
@@ -68,7 +71,7 @@ async function run(ctx, config, exit) {
       contextsCount: assembly.contexts.length,
       toolCount: assembly.tools.length,
       toolNames: actualTools,
-      tools: assembly.tools.map(toolFact),
+      tools: assembly.tools.map(tool => toolFact(tool, config.includeFullSchema === true)),
     },
     checks: {
       exactMinimalSystem: system === MINIMAL_SYSTEM,

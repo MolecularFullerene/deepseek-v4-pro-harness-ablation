@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "request2-live-replay-v2-readonly-route",
+  "primaryEndpoint": "request2_exact_tool_call",
+  "treatments": [
+    "retain-same",
+    "retain-new",
+    "drop-same",
+    "drop-new"
+  ],
+  "request1": {
+    "reasoningRequired": true,
+    "visibleTextMustBeEmpty": true,
+    "finishKind": "tool-calls",
+    "exactlyOneToolCall": true,
+    "toolCall": {
+      "name": "bash",
+      "arguments": {
+        "command": "sed -n '1,120p' /safe/mock/workspace/ROUTE.txt"
+      }
+    }
+  },
+  "request2": {
+    "reasoningRequired": false,
+    "visibleTextMustBeEmpty": true,
+    "finishKind": "tool-calls",
+    "exactlyOneToolCall": true,
+    "toolCall": {
+      "name": "str_replace_editor",
+      "arguments": {
+        "command": "view",
+        "path": "/safe/mock/workspace/ledger.txt",
+        "view_range": [
+          4,
+          7
+        ]
+      }
+    }
+  },
+  "primaryOutcomeRequires": [
+    "eligible",
+    "request1_anchor_pass",
+    "request2_protocol_success",
+    "request2_exact_tool_call_pass"
+  ],
+  "artifactBinding": {
+    "fixtureSha256": "f1003ff0c0597a3bc2e66e2dc487e22b568d93a35b410438a428312627b093f0",
+    "harnessCommit": "47f943859bef60e4160492346772ded9b24f765a",
+    "platform": "darwin-arm64",
+    "surfaceSha256": "0fdd6bb5e6d5c44f5292f98bca22dc6a0313e2ce645743584849b73f5223133c",
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-pro",
+    "reasoningEffort": "max",
+    "temperature": null,
+    "maxTokens": 768,
+    "mockRepeat": 1,
+    "networkRepeat": 3,
+    "networkBaseUrl": "https://api.deepseek.com",
+    "mockBaseUrl": "http://127.0.0.1:9",
+    "mockScriptSha256": "553ab2097227bafb3c2b50163bd0a168a68939e945160db773c32485985904dc",
+    "anonymousUserIdSha256": "4b2f94c54b024d9e76f118916c7bb5c767eb0b09bec174745426be5cfe507123",
+    "systemSha256": "5fab6e32f283d71510531ce850df2690b8fb77437d36bfabbe8c4ac862f19df9",
+    "toolSchemaSha256": [
+      "fd7afc1cf7fcddd6569f0382dfd9b1a06c0b2b1e2302bd37a3927bee6959b1b1",
+      "0948b7082aad2c337f314df4c3e62a779d9a0fdd03f04f07811d7c13e2f2ef3b"
+    ],
+    "toolSchemaChars": [
+      849,
+      2380
+    ],
+    "headerNames": [
+      "accept",
+      "content-type",
+      "user-agent",
+      "x-deepseek-harness-session-id",
+      "x-deepseek-harness-user-id"
+    ],
+    "headerValueSha256": {
+      "accept": "09222aae76e2df5ea422c02315134663eff3252e551091d3293f69f9b6130928",
+      "content-type": "bacb769b46f6d169fb227ea026550f411d46cbe66a9c2a6ba36449c8cf8e4dea",
+      "user-agent": "249903d5d47492c24e6fcdd91e11a212e01e8166be43900a6a795a89634add93"
+    },
+    "request1FixedResultSha256": "479ff6d02c04b34ef351da0e29449f7c8d20114267bfdac4204e4eee76b40619",
+    "request1FixedResultChars": 410,
+    "builtInExpectedJsonSha256": "b86f64f3d1b75ec888861babc012e5a8afe4ad9159d060a866492693d719a3e0"
+  },
+  "safety": {
+    "toolCallsAreCapturedButNeverExecutedByRunner": true,
+    "request1OperationClass": "read-only sed print",
+    "request2OperationClass": "str_replace_editor view",
+    "networkOperationRequested": false,
+    "mutationOperationRequested": false
+  }
+}

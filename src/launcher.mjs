@@ -235,12 +235,14 @@ async function stageRuntime({ tempHome, strategyName, workspaceRoot, patchConfig
 }
 
 function publicRunConfig(options, job, source) {
+  const strategy = STRATEGIES[job.strategy]
   const task = options.task ?? ''
   return {
     strategy: job.strategy,
     repetition: job.repetition,
     preset: STRATEGIES[job.strategy].preset,
     strategyStatus: STRATEGIES[job.strategy].status,
+    experimentalFactors: strategy.experimentalFactors ?? null,
     expectedFirstSurface: expectedFirstSurface(job.strategy, process.platform) ?? null,
     platformQualification: STRATEGIES[job.strategy].platformNote ?? null,
     provider: options.provider,
@@ -294,6 +296,7 @@ export async function runJob(options, job, secret = '') {
       DSH_PERMISSION_MODE: options.permissionMode,
       DSH_CWD: options.workspace,
       DEEPSEEK_BASE_URL: options.baseUrl,
+      ...(strategy.schemaBridgeArm === undefined ? {} : { DSH_SCHEMA_BRIDGE_ARM: strategy.schemaBridgeArm }),
     })
     const startedAt = new Date().toISOString()
     const outcome = await spawnWithSecret({
