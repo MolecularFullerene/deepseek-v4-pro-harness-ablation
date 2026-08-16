@@ -5,6 +5,10 @@ an exact, two-stage tool-routing decision. It reuses the existing guarded
 `request2-live-replay` runner and its blocked `retain/drop reasoning ×
 same/new session` allocation. No model-proposed call is executed.
 
+The first network execution of this v2 fixture/oracle is frozen in
+[`PREREGISTRATION.md`](./PREREGISTRATION.md). It must be committed publicly
+before a credential is supplied to that run or any request from it is sent.
+
 ## Frozen task and primary endpoint
 
 1. Request1 must produce non-empty reasoning and exactly one `bash` tool call:
