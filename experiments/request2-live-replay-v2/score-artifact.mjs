@@ -18,6 +18,7 @@ const PRIMARY_REQUIRES = Object.freeze([
 const ARTIFACT_MODE = 'official-adapter-request2-transport-replay'
 const PILOT_RECEIPT_MODE = 'request2-live-replay-v2-pilot-gate-receipt'
 const PILOT_PASSED_STOP_REASON = '--pilot-only requested; all four protocol cells passed and no main sample was sent.'
+const NETWORK_STUDY_SEED = 'request2-v2-network-20260816-preregistered-v1'
 const HEX_64 = /^[0-9a-f]{64}$/
 const V2_FIXTURE_ID = 'request2-live-replay-v2-readonly-route'
 const STOP_RULE = 'Run four independent-source protocol-pilot cells first. Main samples require all four to succeed. Only both retain cells succeeding plus a drop-cell HTTP 400 identifies drop protocol rejection; every other failure is factorial-pilot-unidentifiable.'
@@ -248,7 +249,7 @@ export function v2ArtifactIntegritySha256(input) {
 /** Reject a mismatched v2 run before credential read or transport sampling. */
 export function validateV2Preflight({
   oracleInput, fixtureSha256, harnessCommit, exactMinimalSurface, transport,
-  provider, model, baseUrl, mockScriptSha256, reasoningEffort, temperature, maxTokens, repeat,
+  provider, model, baseUrl, mockScriptSha256, reasoningEffort, temperature, maxTokens, repeat, seed,
 }) {
   const oracle = validateV2Oracle(oracleInput)
   const binding = oracle.artifactBinding
@@ -265,6 +266,9 @@ export function validateV2Preflight({
     || reasoningEffort !== binding.reasoningEffort || (temperature ?? null) !== binding.temperature
     || maxTokens !== binding.maxTokens || repeat !== expectedRepeat) {
     throw new Error('v2 preflight model, transport, or sampling controls do not match the oracle')
+  }
+  if (transport === 'explicit-network' && seed !== NETWORK_STUDY_SEED) {
+    throw new Error('v2 preflight network seed does not match the preregistered study seed')
   }
   return oracle
 }
@@ -916,6 +920,9 @@ function validateArtifact(artifact, oracle, expectedRun = 'main') {
   const plan = validatePublicPlan(artifact.plan)
   if (artifact.planSha256 !== plan.sha256 || artifact.repeat !== plan.repeat || artifact.seed !== plan.seed) {
     throw new Error('artifact top-level plan controls do not match the frozen plan')
+  }
+  if (artifact.transport === 'explicit-network' && artifact.seed !== NETWORK_STUDY_SEED) {
+    throw new Error('artifact network seed does not match the preregistered study seed')
   }
   const recomputedConfig = sha256(canonicalJson({
     provider: artifact.provider,

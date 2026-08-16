@@ -165,6 +165,7 @@ export async function request2LiveReplayCommand(options) {
       temperature: options.temperature ?? null,
       maxTokens: options.maxTokens ?? null,
       repeat,
+      seed,
     })
   }
   const privatePlan = buildLiveReplayPlan({ repeat, seed })

@@ -10,7 +10,7 @@ import { test } from 'node:test'
 import { validateLiveReplayFixture } from '../src/request2-live-replay.mjs'
 import {
   createV2PilotGateReceipt, scoreV2Artifact, scoreV2Record, validateV2Oracle,
-  v2ArtifactIntegritySha256,
+  validateV2Preflight, v2ArtifactIntegritySha256,
 } from '../experiments/request2-live-replay-v2/score-artifact.mjs'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -263,6 +263,28 @@ test('pilot-only mock E2E emits one strict, non-sensitive GO receipt and rejects
     assert.equal(receipt.artifact.status, 'pilot-passed')
     assert.equal(receipt.pilot.allProtocolSuccess, true)
     assert.equal(Object.values(receipt.pilot.protocolSuccessByTreatment).every(Boolean), true)
+
+    const networkPreflight = {
+      oracleInput: oracle,
+      fixtureSha256: artifact.fixtureSha256,
+      harnessCommit: artifact.harness.commit,
+      exactMinimalSurface: artifact.exactMinimalSurface,
+      transport: 'explicit-network',
+      provider: artifact.provider,
+      model: artifact.model,
+      baseUrl: oracle.artifactBinding.networkBaseUrl,
+      mockScriptSha256: null,
+      reasoningEffort: artifact.reasoningEffort,
+      temperature: artifact.temperature,
+      maxTokens: artifact.maxTokens,
+      repeat: oracle.artifactBinding.networkRepeat,
+      seed: 'request2-v2-network-20260816-preregistered-v1',
+    }
+    assert.doesNotThrow(() => validateV2Preflight(networkPreflight))
+    assert.throws(() => validateV2Preflight({
+      ...networkPreflight,
+      seed: 'different-but-internally-consistent-network-seed',
+    }), /preregistered study seed/)
 
     const receiptText = JSON.stringify(receipt)
     const receiptKeys = []
