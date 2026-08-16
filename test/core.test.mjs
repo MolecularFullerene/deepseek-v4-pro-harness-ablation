@@ -8,7 +8,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import {
-  buildJobs, childEnvironment, configFingerprint, normalizeBaseUrl, readSecret, redactText, seededShuffle, spawnWithSecret,
+  buildJobs, childEnvironment, configFingerprint, minimalChildEnvironment, normalizeBaseUrl, readSecret, redactText, seededShuffle, spawnWithSecret,
 } from '../src/core.mjs'
 import { expectedFirstSurface, resolveStrategies, strategySourcePath } from '../src/strategies.mjs'
 
@@ -58,6 +58,35 @@ test('child environments strip credential-like values without dumping the parent
     PLAIN: 'ok',
   }, { DSH_HOME: '/tmp/lab' })
   assert.deepEqual(env, { PATH: '/bin', PLAIN: 'ok', DSH_HOME: '/tmp/lab' })
+})
+
+test('formal minimal child environments drop ambient preload, proxy, cloud, and DSH configuration', () => {
+  const env = minimalChildEnvironment({
+    PATH: '/bin',
+    LANG: 'C.UTF-8',
+    NODE_OPTIONS: '--import /tmp/canary.mjs',
+    NODE_PATH: '/tmp/canary-modules',
+    HTTPS_PROXY: 'http://proxy.invalid',
+    SSL_CERT_FILE: '/tmp/canary.pem',
+    SSH_AUTH_SOCK: '/tmp/agent.sock',
+    AWS_PROFILE: 'canary',
+    GOOGLE_APPLICATION_CREDENTIALS: '/tmp/google.json',
+    AZURE_CONFIG_DIR: '/tmp/azure',
+    DSH_HOME: '/tmp/ambient-dsh',
+    DEEPSEEK_BASE_URL: 'https://ambient.invalid',
+    DEEPSEEK_API_KEY: 'secret',
+  }, {
+    HOME: '/tmp/private-home',
+    DSH_HOME: '/tmp/private-home',
+    DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+  })
+  assert.deepEqual(env, {
+    PATH: '/bin',
+    LANG: 'C.UTF-8',
+    HOME: '/tmp/private-home',
+    DSH_HOME: '/tmp/private-home',
+    DEEPSEEK_BASE_URL: 'https://api.deepseek.com',
+  })
 })
 
 test('authorization and exact secrets are redacted', () => {
@@ -173,6 +202,15 @@ test('TTY secret input restores mode when writing the prompt fails', async () =>
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(signals.listenerCount(signal), 0)
 })
 
+test('piped secret input aborts promptly under lifecycle governance', async () => {
+  const input = new PassThrough()
+  const controller = new AbortController()
+  const pending = readSecret(input, 64 * 1024, new PassThrough(), new EventEmitter(), controller.signal)
+  controller.abort(new Error('synthetic credential-stage signal'))
+  await assert.rejects(pending, /synthetic credential-stage signal/)
+  assert.equal(input.destroyed, true)
+})
+
 test('secret travels by stdin only and cannot survive returned stdout/stderr', async () => {
   const key = 'CANARY-KEY-DO-NOT-WRITE-9f312'
   const fixture = fileURLToPath(new URL('../fixtures/secret-child.mjs', import.meta.url))
@@ -192,6 +230,76 @@ test('secret travels by stdin only and cannot survive returned stdout/stderr', a
     envHasSecret: false,
     receivedBytes: Buffer.byteLength(key),
   })
+})
+
+test('child timeout hard-kills a process that refuses SIGTERM within a bounded deadline', async () => {
+  const started = Date.now()
+  const outcome = await spawnWithSecret({
+    command: process.execPath,
+    args: ['-e', "process.on('SIGTERM',()=>process.stdout.write('TERM\\n')); process.stdout.write('READY\\n'); setInterval(()=>{},1000)"],
+    cwd: process.cwd(),
+    env: childEnvironment(process.env),
+    timeoutMs: 500,
+    terminationGraceMs: 50,
+    killSettleMs: 100,
+  })
+  assert.equal(outcome.timedOut, true)
+  assert.equal(outcome.overflow, false)
+  assert.equal(outcome.forcedKill, true)
+  assert.equal(outcome.signal, 'SIGKILL')
+  assert.match(outcome.stdout, /READY/)
+  assert.match(outcome.stdout, /TERM/)
+  assert.ok(Date.now() - started < 2_000, 'timeout termination exceeded its hard settle bound')
+})
+
+test('output overflow hard-kills a process that refuses SIGTERM within a bounded deadline', async () => {
+  const script = [
+    "process.on('SIGTERM',()=>{})",
+    "process.stdout.write('READY\\n')",
+    "const chunk='x'.repeat(65536)",
+    'setInterval(()=>process.stdout.write(chunk),0)',
+  ].join(';')
+  const started = Date.now()
+  const outcome = await spawnWithSecret({
+    command: process.execPath,
+    args: ['-e', script],
+    cwd: process.cwd(),
+    env: childEnvironment(process.env),
+    timeoutMs: 10_000,
+    maxOutputBytes: 1_024,
+    terminationGraceMs: 50,
+    killSettleMs: 100,
+  })
+  assert.equal(outcome.timedOut, false)
+  assert.equal(outcome.overflow, true)
+  assert.equal(outcome.forcedKill, true)
+  assert.equal(outcome.signal, 'SIGKILL')
+  assert.ok(Date.now() - started < 2_000, 'overflow termination exceeded its hard settle bound')
+})
+
+test('an AbortSignal terminates the current child and does not wait for the normal timeout', async () => {
+  const controller = new AbortController()
+  const abortTimer = setTimeout(() => controller.abort(new Error('synthetic lifecycle signal')), 500)
+  const started = Date.now()
+  try {
+    const outcome = await spawnWithSecret({
+      command: process.execPath,
+      args: ['-e', "process.on('SIGTERM',()=>{}); process.stdout.write('READY\\n'); setInterval(()=>{},1000)"],
+      cwd: process.cwd(),
+      env: childEnvironment(process.env),
+      timeoutMs: 10_000,
+      signal: controller.signal,
+      terminationGraceMs: 50,
+      killSettleMs: 100,
+    })
+    assert.equal(outcome.aborted, true)
+    assert.equal(outcome.timedOut, false)
+    assert.equal(outcome.forcedKill, true)
+    assert.equal(outcome.signal, 'SIGKILL')
+    assert.ok(Date.now() - started < 2_000, 'AbortSignal did not terminate the child within the hard bound')
+  } finally {
+    clearTimeout(abortTimer)
+  }
 })
 
 test('dry-run artifacts do not contain an ambient canary API key', async () => {

@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "protocol": "schema-bridge-live-v1",
+  "primaryEndpoint": "minimal-like trajectory label (lexical diagnostic, not capability)",
+  "artifactBinding": {
+    "provider": "deepseek-official",
+    "model": "deepseek-v4-pro",
+    "baseUrl": "https://api.deepseek.com",
+    "harnessCommit": "47f943859bef60e4160492346772ded9b24f765a",
+    "platform": "darwin-arm64",
+    "reasoningEffort": "max",
+    "temperature": null,
+    "maxTokens": 768,
+    "timeoutMs": 900000,
+    "capture": "trajectory",
+    "permissionMode": "read-only",
+    "environmentMode": "minimal-allowlist",
+    "launcherMode": "built-js",
+    "protocolClosureSha256": "139ca77386f782bd7368eccecadc31ca2937b40d6f6fe12e6e1aa4d328c5eacb",
+    "stopAfterFirstAssistant": true,
+    "llmRetryDisabled": true
+  },
+  "design": {
+    "seed": "schema-bridge-live-main-20260816-v1",
+    "analysisSeed": "schema-bridge-live-analysis-20260816-v1",
+    "identities": 4,
+    "tasks": 10,
+    "mainBlocks": 40,
+    "pilotAttempts": 4,
+    "mainAttempts": 160,
+    "maxHttpAttempts": 164,
+    "permutationDraws": 100000,
+    "bootstrapDraws": 20000,
+    "familywiseAlpha": 0.05,
+    "bootstrapConfidence": 0.95
+  },
+  "prompts": {
+    "pilotSha256": "d491b630dd3d08f4b42e50698e58c399ea6e17c3f7daca04fb2f99818e0a2ac7",
+    "taskSha256": [
+      "6067c4aa04e634132d33964c15e1c443bd57b450b8e0c694921c2870e5299cf7",
+      "499edee9e1c3c203e7b5c2f7f4a1e94ad44136c6be17afb1636063a39d9f089a",
+      "e6591f265dab2ad20930a494fdc9c25da294f187359eae64b5ebb011ab4ccffc",
+      "9c91a39d1960d4a422afdf587469fd07e18dd4c666eed3957db7035d3dd9337c",
+      "42fec62c2e135af3a79c714252c39fb57a46e58dd154140495a3a94b82cced96",
+      "341dcc4a6a4dbba19c5c482c1aba3fbc3cdbf2ce325afb42c719381df8aa5920",
+      "6fe5aa4da662e963cc59041848974e4e6417f5e8cfe22768ac546fd5ee6ec034",
+      "09d5c85fa63f549072aa086e85ad6ca7870c7d53fa1885c35a6e85b32c6430a6",
+      "ed882689be18c4cb0839503511bbe5e5b7cc42909de26ea03f9542f6db6b0002",
+      "0bb475b8b15ed9a01acede991c992ec21423cc5bc6d8d03fa73aa9518f15a716"
+    ],
+    "setCanonicalSha256": "d861a78fdd9126471e3e73a0820920dc2262a8b2741f5a142aea5fa777f0f481"
+  },
+  "classifier": {
+    "sourceRepository": "xiaobright/modeltest",
+    "sourceCommit": "04255b55f16c4439e538239fb9783070c4165081",
+    "sourcePath": "evaluator/trigger_probe/src/classifier.mjs",
+    "sha256": "0e6a7b575c3f658b537c75b5070645377b43649f26d154b51471e9cdf59a0b7a"
+  },
+  "surface": {
+    "systemRawSha256": "5fab6e32f283d71510531ce850df2690b8fb77437d36bfabbe8c4ac862f19df9",
+    "orderedToolNames": [
+      "bash",
+      "str_replace_editor"
+    ],
+    "toolSchemaRawSha256": {
+      "schema-bridge-pp": [
+        "fd7afc1cf7fcddd6569f0382dfd9b1a06c0b2b1e2302bd37a3927bee6959b1b1",
+        "0948b7082aad2c337f314df4c3e62a779d9a0fdd03f04f07811d7c13e2f2ef3b"
+      ],
+      "schema-bridge-po": [
+        "b22421b472b4209f14a70aacccfc54bfc4f865a0f50fdabb250de8a1140566b2",
+        "0948b7082aad2c337f314df4c3e62a779d9a0fdd03f04f07811d7c13e2f2ef3b"
+      ],
+      "schema-bridge-op": [
+        "fd23fda05ece071a86dfeded9de0ad09df71ff8796fbe2b3e11b36d29ccb12b3",
+        "0948b7082aad2c337f314df4c3e62a779d9a0fdd03f04f07811d7c13e2f2ef3b"
+      ],
+      "schema-bridge-oo": [
+        "ce6ad0324e0e05d863eae734cde4a77ade47574b4c31ed4d2665c89c711ec9e9",
+        "0948b7082aad2c337f314df4c3e62a779d9a0fdd03f04f07811d7c13e2f2ef3b"
+      ]
+    }
+  },
+  "safety": {
+    "publicReadOnlyPrompts": true,
+    "toolExecutorsMayNeverRun": true,
+    "abortedToolResultCode": "ABORTED_BEFORE_DISPATCH",
+    "failedUnitsAreNeverReplaced": true,
+    "pilotGateIgnoresLexicalLabels": true,
+    "rawArtifactMayNotBePublished": true
+  },
+  "publication": {
+    "summaryOnly": true,
+    "allowDeidentifiedPrimaryLabelMatrix": true,
+    "designOrdinalsArePubliclyReconstructable": true,
+    "forbidRawReasoningTextArgumentsAndBodies": true,
+    "forbidRawIdentitySessionRequestAndCallIdentifiersOrHashes": true,
+    "forbidAbsolutePathsAndPerRequestTimes": true
+  }
+}

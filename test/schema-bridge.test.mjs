@@ -26,6 +26,30 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function installBridge(arm) {
+  const listeners = []
+  const ctx = {
+    tools: { guard() { return () => {} } },
+    on(event, callback, options) {
+      listeners.push({ event, callback, options })
+      return () => {}
+    },
+  }
+  applyBridge(ctx, { arm })
+  return Object.fromEntries(listeners.map(listener => [listener.event, listener.callback]))
+}
+
+async function frozenMinimalAssembly() {
+  const fixture = JSON.parse(await readFile(join(
+    PACKAGE_ROOT, 'experiments', 'request2-live-replay-v2', 'fixtures', 'request1.json',
+  ), 'utf8'))
+  return {
+    sections: [{ text: fixture.system }],
+    contexts: [],
+    tools: structuredClone(fixture.tools),
+  }
+}
+
 test('schema bridge rejects unknown arms and installs two fail-closed execution barriers', async () => {
   assert.throws(() => applyBridge({ tools: {}, on() {} }, { arm: 'unknown' }), /arm must be one of/)
   let guard
@@ -48,6 +72,59 @@ test('schema bridge rejects unknown arms and installs two fail-closed execution 
   assert.deepEqual(tripwire.options, { prepend: true })
   await assert.rejects(() => tripwire.callback(), /dispatch reached/)
   assert.equal(listeners.some(listener => listener.event === 'system-prompt/assemble'), true)
+})
+
+test('all bridge arms enforce and transform the exact Minimal assembly and final stream surface', async () => {
+  const persistent = await frozenMinimalAssembly()
+  for (const [strategy, expectedBash] of Object.entries(EXPECTED)) {
+    const arm = strategy.slice(-2)
+    const listeners = installBridge(arm)
+    const bridged = await listeners['system-prompt/assemble'](
+      {}, { agent: { session: { events: [] } } }, async () => structuredClone(persistent),
+    )
+    assert.deepEqual(bridged.tools.map(tool => tool.name), ['bash', 'str_replace_editor'])
+    assert.equal(sha256(JSON.stringify(bridged.tools[0])), expectedBash)
+    assert.equal(sha256(JSON.stringify(bridged.tools[1])), EDITOR_RAW)
+    const nextValue = Symbol('first stream')
+    assert.equal(await listeners['llm/stream']({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'max',
+      maxTokens: 768,
+      system: persistent.sections[0].text,
+      tools: bridged.tools,
+    }, async () => nextValue), nextValue)
+    assert.throws(() => listeners['llm/stream']({
+      provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max', maxTokens: 768,
+      system: persistent.sections[0].text, tools: bridged.tools,
+    }, () => {}), /second model stream is forbidden/)
+  }
+})
+
+test('bridge assembly fails closed on context, tool-order, and second-request drift', async () => {
+  const persistent = await frozenMinimalAssembly()
+  const cases = [
+    { mutate: value => { value.contexts.push({ text: 'ambient' }) }, pattern: /context surface drifted/ },
+    { mutate: value => { value.tools.reverse() }, pattern: /tool order drifted/ },
+  ]
+  for (const example of cases) {
+    const listeners = installBridge('pp')
+    const value = structuredClone(persistent)
+    example.mutate(value)
+    await assert.rejects(() => listeners['system-prompt/assemble'](
+      {}, { agent: { session: { events: [] } } }, async () => value,
+    ), example.pattern)
+  }
+  const listeners = installBridge('pp')
+  await assert.rejects(() => listeners['system-prompt/assemble'](
+    {}, { agent: { session: { events: [{ type: 'request/header' }] } } }, async () => structuredClone(persistent),
+  ), /second model request is forbidden/)
+
+  const finalSurface = installBridge('pp')
+  assert.throws(() => finalSurface['llm/stream']({
+    provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'max', maxTokens: 768,
+    system: `${persistent.sections[0].text} drift`, tools: persistent.tools,
+  }, async () => {}), /outbound Minimal system hash drifted/)
 })
 
 test('all four bridge arms pass a real DSH mount with exact raw schemas', {

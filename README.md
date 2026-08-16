@@ -83,6 +83,11 @@ executor 的同时，只交叉替换 model-visible `bash` description 与 parame
 不能用于端到端能力测试。设计与 schema hash 见
 [`experiments/schema-bridge/`](./experiments/schema-bridge/README.md)。
 
+下一次正式联网采样使用独立的 guarded `schema-bridge-live` 命令与冻结 oracle；
+它不是通用 bridge batch。4-cell pilot、10-task × 4-identity × 4-arm allocation、
+只读/零 dispatch 安全边界和 publication-only scorer 见
+[`experiments/schema-bridge-live/`](./experiments/schema-bridge-live/README.md)。
+
 ## 无 API 的 mount smoke
 
 这会实际启动 DSH、挂载 preset，并经过 `system-prompt/assemble` 读取首请求工具面，不调用模型：
@@ -172,7 +177,9 @@ live 命令强制 `--api-key-stdin`，不会回退到任何 key 环境变量；�
 完整 mock/live 用法、安全边界和输出字段见 `experiments/request2-live-replay/README.md`。
 更具区分力的只读两阶段 tool-routing fixture、严格 artifact validator 与补充 scorer
 见 [`experiments/request2-live-replay-v2/`](./experiments/request2-live-replay-v2/README.md)；
-它目前只有离线判别性 mock 证据，没有新的真实 API 结果。
+其冻结 network-v1 已完成：12 个主样本全部 protocol-success，11/12 精确命中目标
+tool/arguments；结果、限制和 publication boundary 见
+[`network-v1/RESULTS.md`](./experiments/request2-live-replay-v2/results/network-v1/RESULTS.md)。
 
 ## 当前实验报告
 

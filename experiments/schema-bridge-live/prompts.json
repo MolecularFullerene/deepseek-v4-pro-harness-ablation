@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "pilot": {
+    "id": "pilot-repository-map",
+    "language": "en",
+    "text": "Read-only protocol check: inspect the repository top level, locate package.json, and make one appropriate inspection tool call. Do not modify files or execute any project code."
+  },
+  "tasks": [
+    {
+      "id": "en-package-metadata",
+      "language": "en",
+      "text": "Read only: inspect package.json and report the package name, required Node.js version, and available npm scripts. Do not modify any file."
+    },
+    {
+      "id": "en-cli-entry",
+      "language": "en",
+      "text": "Without changing the repository, locate the CLI entry point and summarize which top-level commands it accepts. Cite filenames in the answer."
+    },
+    {
+      "id": "en-bridge-preset",
+      "language": "en",
+      "text": "Perform a read-only inspection of the schema-bridge preset directory. Identify its manifest files and the two tools it assembles."
+    },
+    {
+      "id": "en-real-process-tests",
+      "language": "en",
+      "text": "Inspect the test directory without edits. Find the tests that exercise a real DeepSeek Harness process and summarize their skip conditions."
+    },
+    {
+      "id": "en-diagnostic-boundary",
+      "language": "en",
+      "text": "Read the project README and the schema-bridge README, then state the documented distinction between mount diagnostics and live sampling. Leave the working tree untouched."
+    },
+    {
+      "id": "zh-publication-boundary",
+      "language": "zh",
+      "text": "仅做只读检查：查看 .gitignore 与发布目录约定，说明哪些原始实验产物不得进入版本控制；不要修改任何文件。"
+    },
+    {
+      "id": "zh-strategy-arms",
+      "language": "zh",
+      "text": "在不改动仓库的前提下，阅读 src/strategies.mjs，列出四个 schema bridge 臂及各自的 description/parameters 因子。"
+    },
+    {
+      "id": "zh-runtime-events",
+      "language": "zh",
+      "text": "只读检查 runtime/lab-runner.mjs，概括它为单次轨迹报告的 request、assistant、retry 和工具结果字段。"
+    },
+    {
+      "id": "zh-live-oracle",
+      "language": "zh",
+      "text": "检查 experiments/schema-bridge-live/oracle.json 但不要编辑，说明它冻结的运行控制、样本设计和表面哈希类别。"
+    },
+    {
+      "id": "zh-scorer-statistics",
+      "language": "zh",
+      "text": "阅读 schema bridge live scorer 源码，说明 D/Q/I 对比、Holm 校正与任务簇 bootstrap 的定义；保持工作树不变。"
+    }
+  ]
+}

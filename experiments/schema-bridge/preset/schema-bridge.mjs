@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 export const name = 'schema-bridge-diagnostic'
 export const inject = ['systemPrompt', 'tools']
 
+const SYSTEM_RAW = '5fab6e32f283d71510531ce850df2690b8fb77437d36bfabbe8c4ac862f19df9'
 const PERSISTENT_CANONICAL = 'b44ee1237054e485b671275dd49cda93c9a85a113be6c7be3ea3af4913f91c24'
 const PERSISTENT_RAW = 'fd7afc1cf7fcddd6569f0382dfd9b1a06c0b2b1e2302bd37a3927bee6959b1b1'
 const EDITOR_CANONICAL = '5120c75cebb979bfcc139e3c5739bd79112674978dc121434138161075172d7d'
@@ -72,6 +73,15 @@ const ARMS = Object.freeze({
   oo: Object.freeze({ description: 'one-shot', parameters: 'one-shot', canonical: 'd80d15e24dbba48476b37cebc13fff6225e805c7f0f183762ad83a609095c937', raw: 'ce6ad0324e0e05d863eae734cde4a77ade47574b4c31ed4d2665c89c711ec9e9', chars: 3242 }),
 })
 
+export const SCHEMA_BRIDGE_SURFACE = Object.freeze({
+  systemRawSha256: SYSTEM_RAW,
+  orderedToolNames: Object.freeze(['bash', 'str_replace_editor']),
+  editorRawSha256: EDITOR_RAW,
+  armRawSha256: Object.freeze(Object.fromEntries(
+    Object.entries(ARMS).map(([id, arm]) => [id, arm.raw]),
+  )),
+})
+
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value !== null && typeof value === 'object') {
@@ -113,6 +123,7 @@ function selectedArm(value) {
 export function apply(ctx, config) {
   const armId = selectedArm(config.arm)
   const arm = ARMS[armId]
+  let streamCount = 0
   const oneShot = { name: 'bash', description: ONE_SHOT_DESCRIPTION, parameters: ONE_SHOT_PARAMETERS }
   assertFact('frozen one-shot fixture', fact(oneShot), ARMS.oo)
 
@@ -123,6 +134,31 @@ export function apply(ctx, config) {
     throw new Error(`${name}: invariant violation: dispatch reached the execution waterfall`)
   }, { prepend: true })
 
+  // This is the final model-call boundary, after request reconstruction and
+  // before adapter transport. It prevents a same-step recovery attempt from
+  // bypassing the assembly-time second-request check.
+  ctx.on('llm/stream', (options, next) => {
+    streamCount += 1
+    if (streamCount !== 1) throw new Error(`${name}: a second model stream is forbidden`)
+    if (sha256(options.system ?? '') !== SYSTEM_RAW) {
+      throw new Error(`${name}: outbound Minimal system hash drifted`)
+    }
+    if (options.provider !== 'deepseek-official' || options.model !== 'deepseek-v4-pro'
+      || options.reasoningEffort !== 'max' || options.temperature !== undefined
+      || options.maxTokens !== 768 || options.stop !== undefined) {
+      throw new Error(`${name}: outbound provider/model/sampling controls drifted`)
+    }
+    if (!Array.isArray(options.tools) || options.tools.length !== 2) {
+      throw new Error(`${name}: outbound tool count drifted`)
+    }
+    if (JSON.stringify(options.tools.map(tool => tool.name)) !== JSON.stringify(SCHEMA_BRIDGE_SURFACE.orderedToolNames)) {
+      throw new Error(`${name}: outbound tool order drifted`)
+    }
+    assertFact(`outbound arm ${armId}`, fact(options.tools[0]), arm)
+    assertFact('outbound fixed editor', fact(options.tools[1]), { canonical: EDITOR_CANONICAL, raw: EDITOR_RAW })
+    return next()
+  }, { prepend: true })
+
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembled = await next()
     const agent = context.agent
@@ -130,8 +166,19 @@ export function apply(ctx, config) {
     if (agent.session.events.some(event => event.type === 'request/header')) {
       throw new Error(`${name}: a second model request is forbidden in diagnostic mode`)
     }
+    // A complete persona is restored by the system-prompt service only after
+    // this entire waterfall returns. The exact final system is therefore
+    // locked at llm/stream above (and by the caller's keyless mount report),
+    // rather than against this intentionally intermediate assembly value.
+    if (assembled.contexts.length !== 0) {
+      throw new Error(`${name}: exact Minimal context surface drifted: expected zero contexts, got ${assembled.contexts.length}`)
+    }
     if (assembled.tools.length !== 2) {
       throw new Error(`${name}: expected exactly two registered schemas, got ${assembled.tools.length}`)
+    }
+    const orderedNames = assembled.tools.map(tool => tool.name)
+    if (JSON.stringify(orderedNames) !== JSON.stringify(SCHEMA_BRIDGE_SURFACE.orderedToolNames)) {
+      throw new Error(`${name}: exact Minimal tool order drifted: ${JSON.stringify(orderedNames)}`)
     }
     const byName = new Map(assembled.tools.map(tool => [tool.name, tool]))
     const bash = byName.get('bash')
@@ -150,7 +197,6 @@ export function apply(ctx, config) {
     assertFact(`arm ${armId}`, fact(bridged), arm)
     return {
       ...assembled,
-      contexts: [],
       tools: [bridged, structuredClone(editor)],
     }
   })

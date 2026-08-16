@@ -31,6 +31,17 @@ function hash(value) {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
 function scrub(text, cwd) {
   return String(text).split(cwd).join('{{workspace}}')
 }
@@ -70,6 +81,9 @@ function requestSummary(event, capture, cwd) {
     : {
         name: tool.name,
         schemaSha256: hash(JSON.stringify(tool)),
+        schemaRawSha256: hash(JSON.stringify(tool)),
+        schemaCanonicalSha256: hash(canonical(tool)),
+        schemaRawChars: JSON.stringify(tool).length,
         descriptionChars: tool.description.length,
       })
   return {
@@ -86,6 +100,7 @@ function requestSummary(event, capture, cwd) {
 
 function resultSummary(config, agent, firstSeq, startedAt) {
   const events = agent.session.events.filter(event => event.seq >= firstSeq)
+  const retryEvents = events.filter(event => event.type === 'llm/retry')
   const requests = events.filter(event => event.type === 'request/header')
     .map(event => requestSummary(event, config.capture, config.cwd))
   const assistantMessages = events.filter(event => event.type === 'assistant/message').map(event => {
@@ -148,6 +163,9 @@ function resultSummary(config, agent, firstSeq, startedAt) {
     startedAt,
     finishedAt: new Date().toISOString(),
     eventCount: events.length,
+    requestHeaderCount: requests.length,
+    assistantMessageCount: assistantMessages.length,
+    retryCount: retryEvents.length,
     requests,
     assistantMessages,
     toolCalls,
@@ -187,7 +205,11 @@ async function run(ctx, config, io) {
   const handle = await agents.create({
     sessionId: SessionId(`dsh-lab-${randomUUID()}`),
     meta: { cwd: config.cwd, agentPreset: config.preset },
-    agentOptions: { provider: selection.provider, model: selection.model },
+    agentOptions: {
+      provider: selection.provider,
+      model: selection.model,
+      ...(selection.maxTokens === undefined ? {} : { maxTokens: selection.maxTokens }),
+    },
     setup: async agentCtx => {
       installModelSelection(agentCtx, { current: selection, assembled: undefined })
       await presets.mount(agentCtx, config.preset)

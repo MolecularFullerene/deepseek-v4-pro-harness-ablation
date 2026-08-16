@@ -9,6 +9,8 @@ import { buildJobs, normalizeBaseUrl, readSecret, redactText } from './core.mjs'
 import { inspectHarness, resultFilename, runJob, WORKSPACE_ROOT, writeJson } from './launcher.mjs'
 import { request2LiveReplayCommand } from './request2-live-replay-command.mjs'
 import { request2ReplayCommand } from './request2-replay-command.mjs'
+import { schemaBridgeLiveCommand } from './schema-bridge-live-command.mjs'
+import { SCHEMA_BRIDGE_FIXED_ROUTE, validateGenericSchemaBridgeRun } from './schema-bridge-live.mjs'
 import { DEFAULT_COMPARISON, resolveStrategies, STRATEGIES } from './strategies.mjs'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -22,6 +24,7 @@ Usage:
   node src/cli.mjs run --strategy NAME [...] (--task TEXT | --task-file PATH) [options]
   node src/cli.mjs request2-replay --fixture PATH --out PATH [--harness-root PATH]
   node src/cli.mjs request2-live-replay --fixture PATH --out PATH --api-key-stdin (--mock-script PATH | --allow-network) [options]
+  node src/cli.mjs schema-bridge-live --oracle PATH --out PATH --api-key-stdin --allow-network --max-tokens 768 [options]
 
 Core options:
   --strategy NAME              Repeatable; comma-separated, all, or all-known
@@ -60,12 +63,15 @@ request2-live-replay is also transport-level (not an Agent fork). It uses one
 independent request1 source per live treatment, a controlled four-cell protocol
 pilot, and blocked random allocation (default --repeat 3). It never reads key
 environment variables.
+schema-bridge-live is a fixed real-Agent protocol: one four-arm pilot followed
+by 40 contiguous identity×task Latin-square blocks (160 main requests). It
+requires the frozen oracle and an output path that does not already exist.
 `
 
 function parse(argv) {
   const command = argv[0]
-  if (!['run', 'smoke', 'request2-replay', 'request2-live-replay', 'doctor', 'list', 'help', '--help', '-h'].includes(command)) {
-    throw new Error('first argument must be run, smoke, request2-replay, request2-live-replay, doctor, list, or help')
+  if (!['run', 'smoke', 'request2-replay', 'request2-live-replay', 'schema-bridge-live', 'doctor', 'list', 'help', '--help', '-h'].includes(command)) {
+    throw new Error('first argument must be run, smoke, request2-replay, request2-live-replay, schema-bridge-live, doctor, list, or help')
   }
   const options = {
     command,
@@ -74,14 +80,19 @@ function parse(argv) {
     model: 'deepseek-v4-pro',
     reasoningEffort: 'max',
     capture: 'trajectory',
+    captureExplicit: false,
     workspace: process.cwd(),
+    workspaceExplicit: false,
     workspaceRoot: WORKSPACE_ROOT,
     harnessRoot: resolve(WORKSPACE_ROOT, 'deepseek-harness'),
     permissionMode: 'workspace-write',
+    permissionModeExplicit: false,
     repeat: 1,
     repeatExplicit: false,
     order: 'random',
+    orderExplicit: false,
     identity: 'fixed',
+    identityExplicit: false,
     timeoutMs: 900_000,
     stopAfterFirstAssistant: false,
     apiKeyStdin: false,
@@ -97,20 +108,20 @@ function parse(argv) {
     const arg = argv[index]
     switch (arg) {
       case '--strategy': options.strategies.push(take(argv, index, arg)); index += 1; break
-      case '--provider': options.provider = take(argv, index, arg); index += 1; break
-      case '--model': options.model = take(argv, index, arg); index += 1; break
-      case '--base-url': options.baseUrl = take(argv, index, arg); index += 1; break
-      case '--reasoning-effort': options.reasoningEffort = take(argv, index, arg); index += 1; break
-      case '--temperature': options.temperature = Number(take(argv, index, arg)); index += 1; break
-      case '--max-tokens': options.maxTokens = Number(take(argv, index, arg)); index += 1; break
-      case '--capture': options.capture = take(argv, index, arg); index += 1; break
-      case '--workspace': options.workspace = resolve(take(argv, index, arg)); index += 1; break
-      case '--permission-mode': options.permissionMode = take(argv, index, arg); index += 1; break
+      case '--provider': options.provider = take(argv, index, arg); options.providerExplicit = true; index += 1; break
+      case '--model': options.model = take(argv, index, arg); options.modelExplicit = true; index += 1; break
+      case '--base-url': options.baseUrl = take(argv, index, arg); options.baseUrlExplicit = true; index += 1; break
+      case '--reasoning-effort': options.reasoningEffort = take(argv, index, arg); options.reasoningEffortExplicit = true; index += 1; break
+      case '--temperature': options.temperature = Number(take(argv, index, arg)); options.temperatureExplicit = true; index += 1; break
+      case '--max-tokens': options.maxTokens = Number(take(argv, index, arg)); options.maxTokensExplicit = true; index += 1; break
+      case '--capture': options.capture = take(argv, index, arg); options.captureExplicit = true; index += 1; break
+      case '--workspace': options.workspace = resolve(take(argv, index, arg)); options.workspaceExplicit = true; index += 1; break
+      case '--permission-mode': options.permissionMode = take(argv, index, arg); options.permissionModeExplicit = true; index += 1; break
       case '--repeat': options.repeat = Number(take(argv, index, arg)); options.repeatExplicit = true; index += 1; break
-      case '--order': options.order = take(argv, index, arg); index += 1; break
-      case '--identity': options.identity = take(argv, index, arg); index += 1; break
+      case '--order': options.order = take(argv, index, arg); options.orderExplicit = true; index += 1; break
+      case '--identity': options.identity = take(argv, index, arg); options.identityExplicit = true; index += 1; break
       case '--seed': options.seed = take(argv, index, arg); index += 1; break
-      case '--timeout-ms': options.timeoutMs = Number(take(argv, index, arg)); index += 1; break
+      case '--timeout-ms': options.timeoutMs = Number(take(argv, index, arg)); options.timeoutExplicit = true; index += 1; break
       case '--out': options.out = resolve(take(argv, index, arg)); index += 1; break
       case '--harness-root': options.harnessRoot = resolve(take(argv, index, arg)); index += 1; break
       case '--task': options.task = take(argv, index, arg); index += 1; break
@@ -120,7 +131,7 @@ function parse(argv) {
       case '--oracle': options.oracle = resolve(take(argv, index, arg)); index += 1; break
       case '--allow-network': options.allowNetwork = true; break
       case '--pilot-only': options.pilotOnly = true; break
-      case '--stop-after-first-assistant': options.stopAfterFirstAssistant = true; break
+      case '--stop-after-first-assistant': options.stopAfterFirstAssistant = true; options.stopExplicit = true; break
       case '--api-key-stdin': options.apiKeyStdin = true; break
       case '--keep-runtime': options.keepRuntime = true; break
       case '--dry-run': options.dryRun = true; break
@@ -175,10 +186,13 @@ async function doctor(options) {
 async function batch(options) {
   validate(options)
   const strategies = resolveStrategies(options.strategies.length === 0 ? ['all'] : options.strategies)
-  options.baseUrl = normalizeBaseUrl(options.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com')
+  options.mode = options.command === 'smoke' ? 'mount' : 'run'
+  const hasSchemaBridge = strategies.some(strategy => strategy.startsWith('schema-bridge-'))
+  options.baseUrl = normalizeBaseUrl(options.baseUrl
+    ?? (hasSchemaBridge ? SCHEMA_BRIDGE_FIXED_ROUTE.baseUrl : process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com'))
+  validateGenericSchemaBridgeRun(options, strategies)
   options.seed ??= randomBytes(16).toString('hex')
   options.out ??= resolve(PACKAGE_ROOT, 'runs', safeTimestamp())
-  options.mode = options.command === 'smoke' ? 'mount' : 'run'
   if (options.mode === 'run') {
     if (options.taskFile !== undefined) options.task = await readFile(options.taskFile, 'utf8')
     if (typeof options.task !== 'string' || options.task.trim() === '') throw new Error('run requires a non-empty --task or --task-file')
@@ -188,6 +202,15 @@ async function batch(options) {
 
   const jobs = buildJobs(strategies, options.repeat, options.order, options.seed)
   const harness = await inspectHarness(options.harnessRoot)
+  if (hasSchemaBridge && options.mode === 'run' && harness.gitHead !== SCHEMA_BRIDGE_FIXED_ROUTE.harnessCommit) {
+    throw new Error(`schema bridge run requires Harness commit ${SCHEMA_BRIDGE_FIXED_ROUTE.harnessCommit}`)
+  }
+  if (hasSchemaBridge && options.mode === 'run' && harness.gitTrackedDirty !== false) {
+    throw new Error('schema bridge run requires a clean Git-visible Harness worktree')
+  }
+  if (hasSchemaBridge && !harness.builtLauncher) {
+    throw new Error('schema bridge requires the frozen built Harness launcher')
+  }
   const manifest = {
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
@@ -240,6 +263,7 @@ async function batch(options) {
       const failed = record.process.exitCode !== 0
         || record.runtime === null
         || record.surfaceCheck?.matches === false
+        || record.bridgeProtocolCheck?.matches === false
       if (failed) failures += 1
       manifest.results.push({
         sequence,
@@ -249,6 +273,7 @@ async function batch(options) {
         exitCode: record.process.exitCode,
         timedOut: record.process.timedOut,
         surfaceMatches: record.surfaceCheck?.matches ?? null,
+        bridgeProtocolMatches: record.bridgeProtocolCheck?.matches ?? null,
         anonymousUserIdSha256: record.run.anonymousUserIdSha256 ?? null,
         sessionIdSha256: record.runtime?.requests?.length > 0
           ? record.runtime.sessionIdSha256 ?? null
@@ -285,14 +310,19 @@ async function main() {
   }
   if (options.command === 'request2-replay') return await request2ReplayCommand(options)
   if (options.command === 'request2-live-replay') return await request2LiveReplayCommand(options)
+  if (options.command === 'schema-bridge-live') return await schemaBridgeLiveCommand(options)
   return await batch(options)
 }
 
 try {
   process.exitCode = await main()
 } catch (error) {
-  // The offline replay path must not even read a credential-bearing variable.
-  const keylessErrorPath = ['request2-replay', 'request2-live-replay'].includes(process.argv[2])
+  // Stdin-only and keyless paths must not even read an ambient credential.
+  const argv = process.argv.slice(2)
+  const bridgeStrategy = argv.some((argument, index) => argument === '--strategy'
+    && argv[index + 1]?.split(',').some(value => value.startsWith('schema-bridge-') || value === 'all-known'))
+  const keylessErrorPath = ['request2-replay', 'request2-live-replay', 'schema-bridge-live'].includes(argv[0])
+    || bridgeStrategy
   const known = keylessErrorPath ? '' : process.env.DEEPSEEK_API_KEY ?? ''
   const message = error instanceof Error ? error.message : String(error)
   process.stderr.write(`dsh-lab-cli: ${redactText(message, [known])}\n`)
