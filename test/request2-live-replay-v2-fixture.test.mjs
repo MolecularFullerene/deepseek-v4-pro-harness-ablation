@@ -2,14 +2,15 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { validateLiveReplayFixture } from '../src/request2-live-replay.mjs'
 import {
-  scoreV2Artifact, scoreV2Record, validateV2Oracle, v2ArtifactIntegritySha256,
+  createV2PilotGateReceipt, scoreV2Artifact, scoreV2Record, validateV2Oracle,
+  v2ArtifactIntegritySha256,
 } from '../experiments/request2-live-replay-v2/score-artifact.mjs'
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
@@ -159,6 +160,234 @@ test('v2 scorer is a read-only artifact transformer with no environment or netwo
   assert.equal(source.includes('node:child_process'), false)
   assert.equal(source.includes('execFile'), false)
   assert.equal(source.includes('spawn('), false)
+})
+
+test('live replay refuses an existing output before preflight and preserves its contents and mode', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-r2-live-v2-existing-out-'))
+  const output = join(directory, 'existing.json')
+  const canary = 'EXISTING-WIDE-MODE-CANARY\n'
+  try {
+    await writeFile(output, canary, { mode: 0o600 })
+    await chmod(output, 0o666)
+    const before = await stat(output)
+    assert.equal(before.mode & 0o777, 0o666)
+
+    const run = spawnSync(process.execPath, [
+      CLI,
+      'request2-live-replay',
+      '--fixture', join(directory, 'fixture-must-not-be-read.json'),
+      '--mock-script', join(directory, 'mock-must-not-be-read.json'),
+      '--out', output,
+      '--api-key-stdin',
+      '--harness-root', join(directory, 'harness-must-not-be-mounted'),
+      '--timeout-ms', '30000',
+    ], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      input: '',
+      env: Object.fromEntries(['PATH', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot']
+        .filter(key => process.env[key] !== undefined)
+        .map(key => [key, process.env[key]])),
+      timeout: 5_000,
+    })
+    assert.notEqual(run.status, 0)
+    assert.match(run.stderr, /refusing to overwrite an existing --out file/)
+    assert.doesNotMatch(run.stderr, /ENOENT|API key is empty|official DeepSeek adapter/)
+    assert.equal(await readFile(output, 'utf8'), canary)
+    assert.equal((await stat(output)).mode & 0o777, 0o666)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('pilot-only mock E2E emits one strict, non-sensitive GO receipt and rejects tampering', {
+  skip: !existsSync(BUILT_ADAPTER),
+  timeout: 30_000,
+}, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-r2-live-v2-pilot-gate-'))
+  const output = join(directory, 'pilot-artifact.json')
+  const tamperedOutput = join(directory, 'tampered-pilot-artifact.json')
+  const publicSentinel = 'OFFLINE-V2-PILOT-PUBLIC-NONCREDENTIAL-SENTINEL'
+  try {
+    const run = spawnSync(process.execPath, [
+      CLI,
+      'request2-live-replay',
+      '--fixture', FIXTURE_PATH,
+      '--mock-script', MOCK_PATH,
+      '--oracle', ORACLE_PATH,
+      '--base-url', 'http://127.0.0.1:9',
+      '--max-tokens', '768',
+      '--repeat', '1',
+      '--seed', 'request2-live-replay-v2-offline-pilot-gate-test',
+      '--pilot-only',
+      '--out', output,
+      '--api-key-stdin',
+      '--harness-root', HARNESS_ROOT,
+      '--timeout-ms', '30000',
+    ], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      input: publicSentinel,
+      env: Object.fromEntries(['PATH', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot']
+        .filter(key => process.env[key] !== undefined)
+        .map(key => [key, process.env[key]])),
+      timeout: 30_000,
+    })
+    assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`)
+    const artifactText = await readFile(output, 'utf8')
+    assert.equal(artifactText.includes(publicSentinel), false)
+    const artifact = JSON.parse(artifactText)
+    const { oracle } = await inputs()
+    assert.equal(artifact.status, 'pilot-passed')
+    assert.equal(artifact.pilotOnly, true)
+    assert.deepEqual(artifact.samples, [])
+    assert.equal(artifact.completedSamples, 0)
+    assert.equal(artifact.process.exitCode, 0)
+    assert.equal(artifact.integritySha256, v2ArtifactIntegritySha256(artifact))
+    assert.equal((await stat(output)).mode & 0o777, 0o600)
+    assert.throws(() => scoreV2Artifact(artifact, oracle), /completed/)
+
+    const receipt = createV2PilotGateReceipt(artifact, oracle)
+    assert.deepEqual(Object.keys(receipt), ['schemaVersion', 'mode', 'decision', 'artifact', 'binding', 'controls', 'pilot'])
+    assert.deepEqual(Object.keys(receipt.artifact), ['integritySha256', 'status', 'createdAt', 'finishedAt'])
+    assert.deepEqual(Object.keys(receipt.binding), ['fixtureId', 'oracleSha256', 'fixtureSha256', 'harnessCommit', 'platform'])
+    assert.deepEqual(Object.keys(receipt.controls), [
+      'transport', 'provider', 'model', 'baseUrl', 'reasoningEffort',
+      'temperature', 'maxTokens', 'repeat', 'pilotOnly', 'seed',
+    ])
+    assert.deepEqual(Object.keys(receipt.pilot), ['status', 'allProtocolSuccess', 'protocolSuccessByTreatment'])
+    assert.deepEqual(Object.keys(receipt.pilot.protocolSuccessByTreatment), [
+      'retain-same', 'retain-new', 'drop-same', 'drop-new',
+    ])
+    assert.equal(receipt.decision, 'GO')
+    assert.equal(receipt.artifact.status, 'pilot-passed')
+    assert.equal(receipt.pilot.allProtocolSuccess, true)
+    assert.equal(Object.values(receipt.pilot.protocolSuccessByTreatment).every(Boolean), true)
+
+    const receiptText = JSON.stringify(receipt)
+    const receiptKeys = []
+    const collectKeys = value => {
+      if (Array.isArray(value)) return value.forEach(collectKeys)
+      if (value === null || typeof value !== 'object') return
+      for (const [key, child] of Object.entries(value)) {
+        receiptKeys.push(key)
+        collectKeys(child)
+      }
+    }
+    collectKeys(receipt)
+    for (const forbidden of ['configFingerprint', 'planSha256', 'anonymousUserIdSha256']) {
+      assert.equal(receiptKeys.includes(forbidden), false)
+    }
+    assert.equal(receiptKeys.some(key => /(?:anonymous|session|request|body|tool.?call)/i.test(key)), false)
+    assert.equal(receiptKeys.some(key => /(?:reasoning.*(?:sha|hash)|(?:sha|hash).*reasoning)/i.test(key)), false)
+    const rawPilotValues = [
+      publicSentinel,
+      artifact.configFingerprint,
+      artifact.planSha256,
+      artifact.anonymousUserIdSha256,
+      ...artifact.plan.pilot.allocation.flatMap(unit => [
+        unit.sourceSessionIdSha256, unit.newSessionIdSha256, unit.request2SessionIdSha256,
+      ]),
+      ...artifact.pilot.units.flatMap(unit => [
+        unit.request1.request.bodySha256,
+        unit.request2.request.bodySha256,
+        unit.request1.response.reasoning,
+        ...unit.request1.response.toolCalls.flatMap(call => [call.id, call.arguments]),
+        ...unit.request2.response.toolCalls.flatMap(call => [call.id, call.arguments]),
+        unit.conformance.firstToolCallResponseSha256,
+        ...unit.conformance.variants.map(variant => variant.bodySha256),
+        ...unit.conformance.toolResultPairing.flatMap(pairing => [
+          ...pairing.toolCallIdSha256, ...pairing.toolResultIdSha256,
+        ]),
+      ]),
+    ]
+    for (const value of rawPilotValues) {
+      if (typeof value === 'string' && value.length > 0) assert.equal(receiptText.includes(value), false)
+    }
+
+    const cliGate = spawnSync(process.execPath, [SCORER_PATH, '--pilot-gate', output], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      env: {},
+      timeout: 5_000,
+    })
+    assert.equal(cliGate.status, 0, cliGate.stderr)
+    assert.deepEqual(JSON.parse(cliGate.stdout), receipt)
+
+    const unsealed = structuredClone(artifact)
+    unsealed.pilot.outcome.allProtocolSuccess = false
+    assert.throws(() => createV2PilotGateReceipt(unsealed, oracle), /integrity/)
+
+    const invalidArtifacts = [
+      ['worker-failed status', value => { value.status = 'worker-failed' }],
+      ['wrong fixture binding', value => { value.fixtureSha256 = '0'.repeat(64) }],
+      ['wrong oracle binding', value => { value.scoring.externalOracleSha256 = '0'.repeat(64) }],
+      ['wrong model with recomputed config', value => {
+        value.model = 'deepseek-v4-flash'
+        value.transportFacts.model = value.model
+        rehashPlanAndConfig(value)
+      }],
+      ['wrong transport', value => { value.transport = 'explicit-network' }],
+      ['wrong config fingerprint', value => { value.configFingerprint = '0'.repeat(64) }],
+      ['seed/order contradiction with recomputed plan and config', value => {
+        value.seed = 'tampered-pilot-seed'
+        value.plan.seed = value.seed
+        rehashPlanAndConfig(value)
+      }],
+      ['wrong repeat', value => { value.repeat = 2 }],
+      ['pilotOnly false with recomputed config', value => {
+        value.pilotOnly = false
+        rehashPlanAndConfig(value)
+      }],
+      ['failed process', value => { value.process.exitCode = 1 }],
+      ['reordered pilot plan with recomputed plan and config', value => {
+        ;[value.plan.pilot.allocation[0], value.plan.pilot.allocation[1]] = [
+          value.plan.pilot.allocation[1], value.plan.pilot.allocation[0],
+        ]
+        rehashPlanAndConfig(value)
+      }],
+      ['reordered pilot records', value => {
+        ;[value.pilot.units[0], value.pilot.units[1]] = [value.pilot.units[1], value.pilot.units[0]]
+      }],
+      ['duplicate pilot record', value => { value.pilot.units[1] = structuredClone(value.pilot.units[0]) }],
+      ['outcome contradiction', value => {
+        value.pilot.outcome.protocolSuccessByTreatment['retain-same'] = false
+      }],
+      ['nonempty main samples', value => { value.samples = [structuredClone(value.pilot.units[0])] }],
+      ['nonzero completed samples', value => { value.completedSamples = 1 }],
+      ['wrong pilot stop reason', value => { value.stopReason = 'continue sampling' }],
+      ['extra top-level field', value => { value.unvalidatedExtra = true }],
+      ['raw diagnostic contradiction', value => {
+        value.pilot.units[0].request1.response.reasoningDiagnostic.startsWithWeNeed = false
+      }],
+      ['reversed timestamps', value => {
+        value.createdAt = '2030-01-01T00:00:00.000Z'
+        value.finishedAt = '2029-01-01T00:00:00.000Z'
+      }],
+    ]
+    for (const [label, mutate] of invalidArtifacts) {
+      const invalid = structuredClone(artifact)
+      mutate(invalid)
+      reseal(invalid)
+      assert.throws(() => createV2PilotGateReceipt(invalid, oracle), undefined, label)
+    }
+
+    const workerFailed = structuredClone(artifact)
+    workerFailed.status = 'worker-failed'
+    reseal(workerFailed)
+    await writeFile(tamperedOutput, `${JSON.stringify(workerFailed)}\n`, { mode: 0o600 })
+    const rejectedGate = spawnSync(process.execPath, [SCORER_PATH, '--pilot-gate', tamperedOutput], {
+      cwd: PACKAGE_ROOT,
+      encoding: 'utf8',
+      env: {},
+      timeout: 5_000,
+    })
+    assert.equal(rejectedGate.status, 2)
+    assert.equal(rejectedGate.stdout, '')
+    assert.match(rejectedGate.stderr, /pilot-passed/)
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 test('existing runner plus discriminating mock yields the preregistered 2/4 matrix', {

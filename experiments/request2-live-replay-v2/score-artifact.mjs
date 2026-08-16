@@ -16,6 +16,8 @@ const PRIMARY_REQUIRES = Object.freeze([
   'request2_exact_tool_call_pass',
 ])
 const ARTIFACT_MODE = 'official-adapter-request2-transport-replay'
+const PILOT_RECEIPT_MODE = 'request2-live-replay-v2-pilot-gate-receipt'
+const PILOT_PASSED_STOP_REASON = '--pilot-only requested; all four protocol cells passed and no main sample was sent.'
 const HEX_64 = /^[0-9a-f]{64}$/
 const V2_FIXTURE_ID = 'request2-live-replay-v2-readonly-route'
 const STOP_RULE = 'Run four independent-source protocol-pilot cells first. Main samples require all four to succeed. Only both retain cells succeeding plus a drop-cell HTTP 400 identifies drop protocol rejection; every other failure is factorial-pilot-unidentifiable.'
@@ -77,6 +79,15 @@ const EXPECTED_BINDING = Object.freeze({
   request1FixedResultChars: 410,
   builtInExpectedJsonSha256: 'b86f64f3d1b75ec888861babc012e5a8afe4ad9159d060a866492693d719a3e0',
 })
+const PILOT_ARTIFACT_KEYS = Object.freeze([
+  'schemaVersion', 'mode', 'status', 'createdAt', 'transport', 'credentialMode',
+  'provider', 'model', 'baseUrl', 'reasoningEffort', 'temperature', 'maxTokens',
+  'repeat', 'pilotOnly', 'seed', 'fixtureSha256', 'mockScriptSha256',
+  'configFingerprint', 'anonymousUserIdSha256', 'exactMinimalSurface', 'scoring',
+  'plan', 'harness', 'platform', 'limitation', 'planSha256', 'pilot', 'samples',
+  'completedSamples', 'stopReason', 'transportFacts', 'design', 'finishedAt',
+  'process', 'integritySha256',
+])
 
 function plainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -728,6 +739,48 @@ function validateConformance(record, path, binding, anonymousUserIdSha256, plann
   }
 }
 
+function validatePilotResponseShape(response, path, request1) {
+  exactKeys(response, [
+    'reasoning', 'text', 'toolCalls', 'usage', 'finish', 'error', 'reasoningDiagnostic',
+  ], path)
+  if (typeof response.reasoning !== 'string' || typeof response.text !== 'string'
+    || !Array.isArray(response.toolCalls) || !plainObject(response.reasoningDiagnostic)) {
+    throw new Error(`${path} is not a runner response summary`)
+  }
+  response.toolCalls.forEach((call, index) => {
+    exactKeys(call, ['id', 'name', 'arguments'], `${path}.toolCalls[${index}]`)
+    nonEmptyString(call.id, `${path}.toolCalls[${index}].id`)
+    nonEmptyString(call.name, `${path}.toolCalls[${index}].name`)
+    if (typeof call.arguments !== 'string') throw new Error(`${path}.toolCalls[${index}].arguments must be a string`)
+  })
+  const trimmed = response.reasoning.trimStart()
+  const expectedDiagnostic = {
+    startsWithWeNeed: /^we need\b/i.test(trimmed),
+    startsWithLetMe: /^let me\b/i.test(trimmed),
+    labelRole: 'diagnostic-only; never used as protocol success or answer correctness',
+  }
+  if (canonicalJson(response.reasoningDiagnostic) !== canonicalJson(expectedDiagnostic)) {
+    throw new Error(`${path}.reasoningDiagnostic is inconsistent with its raw reasoning`)
+  }
+  if (request1 && (response.reasoning.length === 0 || response.toolCalls.length === 0
+    || response.finish?.kind !== 'tool-calls' || response.error !== null)) {
+    throw new Error(`${path} does not satisfy the runner source-eligibility shape`)
+  }
+}
+
+function validatePilotRecordShape(record, path) {
+  exactKeys(record, [
+    'unitId', 'treatment', 'sourceSessionIdSha256', 'request2SessionIdSha256',
+    'request1', 'eligible', 'fixedToolResults', 'conformance', 'request2',
+  ], path)
+  exactKeys(record.request1, ['request', 'response'], `${path}.request1`)
+  exactKeys(record.request2, [
+    'request', 'response', 'protocol', 'score', 'toolResultPairing',
+  ], `${path}.request2`)
+  validatePilotResponseShape(record.request1.response, `${path}.request1.response`, true)
+  validatePilotResponseShape(record.request2.response, `${path}.request2.response`, false)
+}
+
 function validateRecordAgainstPlan(record, planned, path, anonymousUserIdSha256, binding) {
   if (!plainObject(record)) throw new Error(`${path} must be an object`)
   if (record.unitId !== planned.unitId
@@ -788,13 +841,17 @@ function validatePassedPilot(pilot) {
   }
 }
 
-function validateArtifact(artifact, oracle) {
+function validateArtifact(artifact, oracle, expectedRun = 'main') {
+  const pilotGate = expectedRun === 'pilot-gate'
+  if (!pilotGate && expectedRun !== 'main') throw new Error('internal artifact validation mode is invalid')
+  if (pilotGate) exactKeys(artifact, PILOT_ARTIFACT_KEYS, 'artifact')
   hexSha256(artifact.integritySha256, 'artifact.integritySha256')
   if (v2ArtifactIntegritySha256(artifact) !== artifact.integritySha256) {
     throw new Error('artifact integrity SHA-256 does not match its exported contents')
   }
-  if (artifact.schemaVersion !== 1 || artifact.mode !== ARTIFACT_MODE || artifact.status !== 'completed') {
-    throw new Error('artifact must be one completed request2 live replay')
+  const expectedStatus = pilotGate ? 'pilot-passed' : 'completed'
+  if (artifact.schemaVersion !== 1 || artifact.mode !== ARTIFACT_MODE || artifact.status !== expectedStatus) {
+    throw new Error(`artifact must be one ${expectedStatus} request2 live replay`)
   }
   const createdAt = Date.parse(artifact.createdAt)
   const finishedAt = Date.parse(artifact.finishedAt)
@@ -852,9 +909,9 @@ function validateArtifact(artifact, oracle) {
     throw new Error('artifact base URL does not match its frozen transport route')
   }
   exactKeys(artifact.process, ['exitCode', 'signal', 'timedOut', 'outputOverflow'], 'artifact.process')
-  if (artifact.pilotOnly !== false || artifact.process.exitCode !== 0 || artifact.process.signal !== null
+  if (artifact.pilotOnly !== pilotGate || artifact.process.exitCode !== 0 || artifact.process.signal !== null
     || artifact.process.timedOut !== false || artifact.process.outputOverflow !== false) {
-    throw new Error('artifact process/pilot controls are not a completed main run')
+    throw new Error(`artifact process/pilot controls are not a valid ${pilotGate ? 'pilot gate' : 'completed main run'}`)
   }
   const plan = validatePublicPlan(artifact.plan)
   if (artifact.planSha256 !== plan.sha256 || artifact.repeat !== plan.repeat || artifact.seed !== plan.seed) {
@@ -904,17 +961,28 @@ function validateArtifact(artifact, oracle) {
   const pilotIds = new Set()
   artifact.pilot.units.forEach((record, index) => {
     if (pilotIds.has(record?.unitId) || pilotPlan[record?.unitId] === undefined) throw new Error('artifact pilot has a duplicate or unplanned unit')
+    if (pilotGate && record.unitId !== plan.pilot.allocation[index].unitId) {
+      throw new Error('artifact pilot record order does not match the frozen plan')
+    }
     pilotIds.add(record.unitId)
+    if (pilotGate) validatePilotRecordShape(record, `artifact.pilot.units[${index}]`)
     validateRecordAgainstPlan(
       record, pilotPlan[record.unitId], `artifact.pilot.units[${index}]`,
       artifact.anonymousUserIdSha256, binding,
     )
     if (record.eligible !== true || record.request2?.protocol?.success !== true) {
-      throw new Error('artifact completed despite a non-successful protocol pilot unit')
+      throw new Error('artifact contains a non-successful protocol pilot unit')
     }
   })
   validatePassedPilot(artifact.pilot)
   const plannedSamples = plan.blocks.flatMap(block => block.allocation)
+  if (pilotGate) {
+    if (!Array.isArray(artifact.samples) || artifact.samples.length !== 0
+      || artifact.completedSamples !== 0 || artifact.stopReason !== PILOT_PASSED_STOP_REASON) {
+      throw new Error('artifact pilot gate must contain no main samples and the exact pilot-only stop reason')
+    }
+    return { oracleHash, plan, plannedSamples: plannedSamples.length }
+  }
   if (!Array.isArray(artifact.samples) || artifact.samples.length !== plannedSamples.length) {
     throw new Error('artifact.samples does not cover every planned main unit')
   }
@@ -971,18 +1039,66 @@ export function scoreV2Artifact(artifact, oracleInput) {
   }
 }
 
+/** Validate a pilot-only artifact and emit a deliberately minimal public GO receipt. */
+export function createV2PilotGateReceipt(artifact, oracleInput) {
+  if (!plainObject(artifact)) throw new Error('artifact must be an object')
+  const oracle = validateV2Oracle(oracleInput)
+  const validated = validateArtifact(artifact, oracle, 'pilot-gate')
+  return {
+    schemaVersion: 1,
+    mode: PILOT_RECEIPT_MODE,
+    decision: 'GO',
+    artifact: {
+      integritySha256: artifact.integritySha256,
+      status: 'pilot-passed',
+      createdAt: artifact.createdAt,
+      finishedAt: artifact.finishedAt,
+    },
+    binding: {
+      fixtureId: oracle.fixtureId,
+      oracleSha256: validated.oracleHash,
+      fixtureSha256: oracle.artifactBinding.fixtureSha256,
+      harnessCommit: oracle.artifactBinding.harnessCommit,
+      platform: oracle.artifactBinding.platform,
+    },
+    controls: {
+      transport: artifact.transport,
+      provider: artifact.provider,
+      model: artifact.model,
+      baseUrl: artifact.baseUrl,
+      reasoningEffort: artifact.reasoningEffort,
+      temperature: artifact.temperature,
+      maxTokens: artifact.maxTokens,
+      repeat: artifact.repeat,
+      pilotOnly: true,
+      seed: artifact.seed,
+    },
+    pilot: {
+      status: 'passed',
+      allProtocolSuccess: true,
+      protocolSuccessByTreatment: structuredClone(artifact.pilot.outcome.protocolSuccessByTreatment),
+    },
+  }
+}
+
 async function cli() {
-  const artifactPath = process.argv[2]
-  const oraclePath = process.argv[3] ?? fileURLToPath(new URL('./oracle.json', import.meta.url))
-  if (artifactPath === undefined || process.argv.length > 4) {
-    throw new Error('usage: node score-artifact.mjs ARTIFACT.json [ORACLE.json]')
+  const pilotGate = process.argv[2] === '--pilot-gate'
+  const offset = pilotGate ? 3 : 2
+  const artifactPath = process.argv[offset]
+  const oraclePath = process.argv[offset + 1] ?? fileURLToPath(new URL('./oracle.json', import.meta.url))
+  if (artifactPath === undefined || process.argv.length > offset + 2) {
+    throw new Error('usage: node score-artifact.mjs [--pilot-gate] ARTIFACT.json [ORACLE.json]')
   }
   const [artifactText, oracleText] = await Promise.all([
     readFile(resolve(artifactPath), 'utf8'),
     readFile(resolve(oraclePath), 'utf8'),
   ])
-  const score = scoreV2Artifact(JSON.parse(artifactText), JSON.parse(oracleText))
-  process.stdout.write(`${JSON.stringify(score, null, 2)}\n`)
+  const artifact = JSON.parse(artifactText)
+  const oracle = JSON.parse(oracleText)
+  const output = pilotGate
+    ? createV2PilotGateReceipt(artifact, oracle)
+    : scoreV2Artifact(artifact, oracle)
+  process.stdout.write(`${JSON.stringify(output, null, 2)}\n`)
 }
 
 const invokedPath = process.argv[1] === undefined ? null : pathToFileURL(resolve(process.argv[1])).href

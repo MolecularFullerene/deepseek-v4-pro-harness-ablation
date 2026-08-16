@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
-import { access, readFile } from 'node:fs/promises'
+import { access, lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { canonicalJson, normalizeBaseUrl, readSecret, redactText, redactValue, sha256 } from './core.mjs'
 import { writeJson } from './launcher.mjs'
@@ -17,6 +17,26 @@ import {
 const PACKAGE_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const WORKER = join(PACKAGE_ROOT, 'runtime', 'request2-live-replay-worker.mjs')
 const DEFAULT_BASE_URL = 'https://api.deepseek.com'
+
+async function requireFreshOutput(path) {
+  try {
+    await lstat(path)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return
+    throw error
+  }
+  throw new Error('refusing to overwrite an existing --out file')
+}
+
+async function writeInitialJson(path, value) {
+  await mkdir(dirname(path), { recursive: true })
+  try {
+    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+  } catch (error) {
+    if (error?.code === 'EEXIST') throw new Error('refusing to overwrite an existing --out file')
+    throw error
+  }
+}
 
 function gitHead(path) {
   try {
@@ -106,6 +126,9 @@ export async function request2LiveReplayCommand(options) {
   if (options.allowNetwork && options.maxTokens === undefined) {
     throw new Error('network request2-live-replay requires explicit --max-tokens to bound pilot/main cost')
   }
+  // Check before fixture/oracle reads or a keyless harness mount, then use an
+  // exclusive first write below to close the check/create race before stdin or transport.
+  await requireFreshOutput(options.out)
   const baseUrl = normalizeBaseUrl(options.baseUrl ?? DEFAULT_BASE_URL)
   const seed = options.seed ?? randomBytes(16).toString('hex')
   const fixtureText = await readFile(options.fixture, 'utf8')
@@ -198,7 +221,7 @@ export async function request2LiveReplayCommand(options) {
     limitation: 'Guarded transport-level serializer replay with independent request1 source sessions; not a DSH Agent/Session fork.',
   }
   // Freeze the complete allocation and stopping rule on disk before any key is read or request is made.
-  await writeJson(options.out, planned)
+  await writeInitialJson(options.out, planned)
 
   let secret = ''
   try {
