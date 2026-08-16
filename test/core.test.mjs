@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { test } from 'node:test'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,7 +8,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { spawnSync } from 'node:child_process'
 import {
-  buildJobs, childEnvironment, configFingerprint, normalizeBaseUrl, redactText, seededShuffle, spawnWithSecret,
+  buildJobs, childEnvironment, configFingerprint, normalizeBaseUrl, readSecret, redactText, seededShuffle, spawnWithSecret,
 } from '../src/core.mjs'
 import { expectedFirstSurface, resolveStrategies, strategySourcePath } from '../src/strategies.mjs'
 
@@ -62,6 +64,113 @@ test('authorization and exact secrets are redacted', () => {
   const key = 'CANARY-KEY-123'
   const redacted = redactText(`Bearer ${key}\nauthorization: ${key}\nraw=${key}`, [key])
   assert.equal(redacted.includes(key), false)
+})
+
+test('TTY secret input disables echo and restores terminal mode', async () => {
+  const input = new PassThrough()
+  const prompt = new PassThrough()
+  const signals = new EventEmitter()
+  const promptChunks = []
+  const promptRawStates = []
+  const dataListenerRawStates = []
+  const modes = []
+  input.isTTY = true
+  input.isRaw = false
+  const originalOn = input.on
+  input.on = function (event, listener) {
+    if (event === 'data') dataListenerRawStates.push(input.isRaw)
+    return originalOn.call(this, event, listener)
+  }
+  input.setRawMode = value => {
+    modes.push(value)
+    input.isRaw = value
+  }
+  prompt.on('data', chunk => {
+    promptRawStates.push(input.isRaw)
+    promptChunks.push(chunk)
+  })
+  const pending = readSecret(input, 64 * 1024, prompt, signals)
+  assert.deepEqual(dataListenerRawStates, [true], 'stdin must not start flowing before raw mode is active')
+  assert.equal(promptRawStates[0], true, 'the hidden prompt must appear only after raw mode is active')
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(signals.listenerCount(signal), 1)
+  input.write('PUBLIC-HIDDEN-INPUT')
+  input.write('\r')
+  assert.equal(await pending, 'PUBLIC-HIDDEN-INPUT')
+  assert.deepEqual(modes, [true, false])
+  assert.equal(input.isRaw, false)
+  const visible = Buffer.concat(promptChunks).toString('utf8')
+  assert.match(visible, /input hidden/)
+  assert.equal(visible.includes('PUBLIC-HIDDEN-INPUT'), false)
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(signals.listenerCount(signal), 0)
+})
+
+test('TTY secret input fails closed on close and restores mode and listeners', async () => {
+  const input = new PassThrough()
+  const prompt = new PassThrough()
+  const signals = new EventEmitter()
+  const modes = []
+  input.isTTY = true
+  input.isRaw = false
+  input.setRawMode = value => {
+    modes.push(value)
+    input.isRaw = value
+  }
+
+  const pending = readSecret(input, 64 * 1024, prompt, signals)
+  input.emit('close')
+  await assert.rejects(pending, /TTY stdin closed before API key input completed/)
+  assert.deepEqual(modes, [true, false])
+  assert.equal(input.isRaw, false)
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(signals.listenerCount(signal), 0)
+})
+
+test('TTY secret input restores mode once and removes listeners for termination signals', async () => {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    const input = new PassThrough()
+    const prompt = new PassThrough()
+    const signals = new EventEmitter()
+    const modes = []
+    input.isTTY = true
+    input.isRaw = false
+    input.setRawMode = value => {
+      modes.push(value)
+      input.isRaw = value
+    }
+
+    const pending = readSecret(input, 64 * 1024, prompt, signals)
+    assert.equal(signals.emit(signal), true)
+    assert.equal(input.isRaw, false, `${signal} must restore the terminal synchronously`)
+    await assert.rejects(pending, new RegExp(signal))
+    assert.deepEqual(modes, [true, false], `${signal} must not restore raw mode twice`)
+    assert.equal(input.destroyed, true, `${signal} must release the resumed stdin handle`)
+    for (const candidate of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+      assert.equal(signals.listenerCount(candidate), 0)
+    }
+    assert.equal(signals.emit(signal), false, `${signal} handler must not leak past the read`)
+    assert.deepEqual(modes, [true, false])
+  }
+})
+
+test('TTY secret input restores mode when writing the prompt fails', async () => {
+  const input = new PassThrough()
+  const signals = new EventEmitter()
+  const modes = []
+  input.isTTY = true
+  input.isRaw = false
+  input.setRawMode = value => {
+    modes.push(value)
+    input.isRaw = value
+  }
+  const prompt = {
+    write() {
+      throw new Error('synthetic prompt failure')
+    },
+  }
+
+  await assert.rejects(readSecret(input, 64 * 1024, prompt, signals), /synthetic prompt failure/)
+  assert.deepEqual(modes, [true, false])
+  assert.equal(input.isRaw, false)
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) assert.equal(signals.listenerCount(signal), 0)
 })
 
 test('secret travels by stdin only and cannot survive returned stdout/stderr', async () => {

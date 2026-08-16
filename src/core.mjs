@@ -101,8 +101,122 @@ export function buildJobs(strategies, repeat, order, seed) {
   return order === 'random' ? seededShuffle(jobs, seed) : jobs
 }
 
-/** Read one secret from stdin with a strict in-memory size bound. */
-export async function readSecret(stream, maxBytes = 64 * 1024) {
+function decodeSecret(buffer) {
+  const secret = buffer.toString('utf8').replace(/(?:\r?\n)$/, '')
+  if (secret.length === 0) throw new Error('API key is empty')
+  if (secret.includes('\0')) throw new Error('API key contains a NUL byte')
+  return secret
+}
+
+const TTY_INPUT_SIGNALS = Object.freeze(['SIGINT', 'SIGTERM', 'SIGHUP'])
+
+async function readHiddenTtySecret(stream, maxBytes, promptStream, signalSource) {
+  if (typeof stream.setRawMode !== 'function') throw new Error('TTY stdin cannot disable echo')
+  const bytes = []
+  const wasRaw = stream.isRaw === true
+  let rawModeActive = false
+  let prompted = false
+  let finished = false
+  let resolveInput
+  let rejectInput
+
+  const cleanupInputListeners = () => {
+    stream.off('data', onData)
+    stream.off('end', onEnd)
+    stream.off('error', onError)
+    stream.off('close', onClose)
+  }
+  const finish = error => {
+    if (finished) return
+    finished = true
+    cleanupInputListeners()
+    if (error === undefined) resolveInput(Buffer.from(bytes))
+    else rejectInput(error)
+  }
+  const onData = chunk => {
+    for (const byte of Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)) {
+      if (byte === 3) return finish(new Error('API key input was cancelled'))
+      if (byte === 4 || byte === 10 || byte === 13) return finish()
+      if (byte === 8 || byte === 127) {
+        bytes.pop()
+        continue
+      }
+      bytes.push(byte)
+      if (bytes.length > maxBytes) return finish(new Error('API key from stdin exceeds 64 KiB'))
+    }
+  }
+  const onEnd = () => finish()
+  const onError = error => finish(error)
+  const onClose = () => finish(new Error('TTY stdin closed before API key input completed'))
+  const input = new Promise((resolve, reject) => {
+    resolveInput = resolve
+    rejectInput = reject
+  })
+
+  const restoreTerminal = () => {
+    if (!rawModeActive) return
+    stream.setRawMode(wasRaw)
+    rawModeActive = false
+  }
+  const signalHandlers = new Map(TTY_INPUT_SIGNALS.map(signal => [signal, () => {
+    let error = new Error(`API key input was interrupted by ${signal}`)
+    try {
+      restoreTerminal()
+    } catch (restoreError) {
+      error = new Error(`failed to restore TTY mode after ${signal}`, { cause: restoreError })
+    }
+    finish(error)
+    // Releasing the resumed TTY handle lets a plain CLI finish its error path
+    // instead of hanging after the signal has been converted to a rejection.
+    stream.destroy()
+  }]))
+  const cleanupSignalListeners = () => {
+    for (const [signal, handler] of signalHandlers) signalSource.off(signal, handler)
+  }
+  try {
+    for (const [signal, handler] of signalHandlers) signalSource.prependOnceListener(signal, handler)
+    // Do not advertise a hidden prompt until echo has actually been disabled.
+    stream.setRawMode(true)
+    rawModeActive = true
+    // Attaching a data listener can make a Readable flow, so it too belongs
+    // behind the successful raw-mode transition.
+    stream.on('data', onData)
+    stream.once('end', onEnd)
+    stream.once('error', onError)
+    stream.once('close', onClose)
+    prompted = true
+    promptStream.write('Temporary API key (input hidden): ')
+    stream.resume()
+    return decodeSecret(await input)
+  } finally {
+    cleanupInputListeners()
+    cleanupSignalListeners()
+    let cleanupError
+    try {
+      restoreTerminal()
+    } catch (error) {
+      cleanupError = error
+    }
+    try {
+      stream.pause()
+    } catch (error) {
+      cleanupError ??= error
+    }
+    if (prompted) {
+      try {
+        promptStream.write('\n')
+      } catch (error) {
+        cleanupError ??= error
+      }
+    }
+    if (cleanupError !== undefined) throw cleanupError
+  }
+}
+
+/** Read one secret from stdin with a strict in-memory size bound. TTY input is
+ * placed in raw mode and completed by Enter/EOF so the value is never echoed. */
+export async function readSecret(stream, maxBytes = 64 * 1024, promptStream = process.stderr, signalSource = process) {
+  if (stream.isTTY === true) return await readHiddenTtySecret(stream, maxBytes, promptStream, signalSource)
   const chunks = []
   let bytes = 0
   for await (const chunk of stream) {
@@ -111,10 +225,7 @@ export async function readSecret(stream, maxBytes = 64 * 1024) {
     if (bytes > maxBytes) throw new Error('API key from stdin exceeds 64 KiB')
     chunks.push(buffer)
   }
-  const secret = Buffer.concat(chunks).toString('utf8').replace(/(?:\r?\n)$/, '')
-  if (secret.length === 0) throw new Error('API key is empty')
-  if (secret.includes('\0')) throw new Error('API key contains a NUL byte')
-  return secret
+  return decodeSecret(Buffer.concat(chunks))
 }
 
 /**

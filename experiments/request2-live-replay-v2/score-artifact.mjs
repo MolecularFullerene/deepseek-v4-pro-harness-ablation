@@ -76,8 +76,18 @@ const EXPECTED_BINDING = Object.freeze({
     'content-type': 'bacb769b46f6d169fb227ea026550f411d46cbe66a9c2a6ba36449c8cf8e4dea',
     'user-agent': '249903d5d47492c24e6fcdd91e11a212e01e8166be43900a6a795a89634add93',
   },
-  request1FixedResultSha256: '479ff6d02c04b34ef351da0e29449f7c8d20114267bfdac4204e4eee76b40619',
-  request1FixedResultChars: 410,
+  request1FixedResults: {
+    bash: {
+      resultSha256: '479ff6d02c04b34ef351da0e29449f7c8d20114267bfdac4204e4eee76b40619',
+      resultChars: 410,
+      isError: false,
+    },
+    str_replace_editor: {
+      resultSha256: '5ecbd0a8e4ddc9ec263d9a930d3a2f585877d7ac192c5b790e5e278bdfeecc25',
+      resultChars: 103,
+      isError: true,
+    },
+  },
   builtInExpectedJsonSha256: 'b86f64f3d1b75ec888861babc012e5a8afe4ad9159d060a866492693d719a3e0',
 })
 const PILOT_ARTIFACT_KEYS = Object.freeze([
@@ -184,7 +194,7 @@ export function validateV2Oracle(input) {
     'networkRepeat', 'networkBaseUrl', 'mockBaseUrl', 'systemSha256',
     'mockScriptSha256', 'anonymousUserIdSha256',
     'toolSchemaSha256', 'toolSchemaChars', 'headerNames', 'headerValueSha256',
-    'request1FixedResultSha256', 'request1FixedResultChars',
+    'request1FixedResults',
     'builtInExpectedJsonSha256',
   ], 'oracle.artifactBinding')
   if (canonicalJson(binding) !== canonicalJson(EXPECTED_BINDING)) {
@@ -207,7 +217,7 @@ export function validateV2Oracle(input) {
   }
   for (const key of [
     'mockScriptSha256', 'anonymousUserIdSha256', 'systemSha256',
-    'request1FixedResultSha256', 'builtInExpectedJsonSha256',
+    'builtInExpectedJsonSha256',
   ]) hexSha256(binding[key], `oracle.artifactBinding.${key}`)
   if (!Array.isArray(binding.toolSchemaSha256) || binding.toolSchemaSha256.length !== 2) {
     throw new Error('oracle.artifactBinding.toolSchemaSha256 must freeze two tools')
@@ -222,7 +232,15 @@ export function validateV2Oracle(input) {
   }
   exactKeys(binding.headerValueSha256, ['accept', 'content-type', 'user-agent'], 'oracle.artifactBinding.headerValueSha256')
   Object.entries(binding.headerValueSha256).forEach(([key, value]) => hexSha256(value, `oracle.artifactBinding.headerValueSha256.${key}`))
-  if (binding.request1FixedResultChars !== 410) throw new Error('oracle.artifactBinding.request1FixedResultChars must be 410')
+  exactKeys(binding.request1FixedResults, ['bash', 'str_replace_editor'], 'oracle.artifactBinding.request1FixedResults')
+  for (const [name, expected] of Object.entries(EXPECTED_BINDING.request1FixedResults)) {
+    const actual = binding.request1FixedResults[name]
+    exactKeys(actual, ['resultSha256', 'resultChars', 'isError'], `oracle.artifactBinding.request1FixedResults.${name}`)
+    hexSha256(actual.resultSha256, `oracle.artifactBinding.request1FixedResults.${name}.resultSha256`)
+    if (canonicalJson(actual) !== canonicalJson(expected)) {
+      throw new Error(`oracle.artifactBinding.request1FixedResults.${name} does not match the frozen fixture`)
+    }
+  }
   exactKeys(oracle.safety, [
     'toolCallsAreCapturedButNeverExecutedByRunner', 'request1OperationClass',
     'request2OperationClass', 'networkOperationRequested', 'mutationOperationRequested',
@@ -702,6 +720,21 @@ function validateConformance(record, path, binding, anonymousUserIdSha256, plann
     throw new Error(`${path}.request2 request does not equal its assigned preflight variant`)
   }
 
+  const calls = record.request1?.response?.toolCalls
+  if (!Array.isArray(calls) || calls.length === 0 || !Array.isArray(record.fixedToolResults)
+    || record.fixedToolResults.length !== calls.length) {
+    throw new Error(`${path} must contain matching non-empty request1 calls and fixed results`)
+  }
+  calls.forEach((call, index) => {
+    exactKeys(call, ['id', 'name', 'arguments'], `${path}.request1.response.toolCalls[${index}]`)
+    nonEmptyString(call.id, `${path}.request1.response.toolCalls[${index}].id`)
+    nonEmptyString(call.name, `${path}.request1.response.toolCalls[${index}].name`)
+    if (typeof call.arguments !== 'string') {
+      throw new Error(`${path}.request1.response.toolCalls[${index}].arguments must be a string`)
+    }
+  })
+  const callIdHashes = calls.map(call => sha256(call.id))
+
   if (!Array.isArray(conformance.toolResultPairing) || conformance.toolResultPairing.length !== 4) {
     throw new Error(`${path}.conformance.toolResultPairing must contain four cells`)
   }
@@ -710,15 +743,18 @@ function validateConformance(record, path, binding, anonymousUserIdSha256, plann
     const pairing = conformance.toolResultPairing[index]
     exactKeys(pairing, ['id', 'passed', 'toolCallIdSha256', 'toolResultIdSha256'], `${path}.conformance.toolResultPairing[${index}]`)
     if (pairing.id !== id || pairing.passed !== true
-      || !Array.isArray(pairing.toolCallIdSha256) || pairing.toolCallIdSha256.length !== 1
+      || !Array.isArray(pairing.toolCallIdSha256) || !Array.isArray(pairing.toolResultIdSha256)
+      || pairing.toolCallIdSha256.length !== calls.length
       || canonicalJson(pairing.toolCallIdSha256) !== canonicalJson(pairing.toolResultIdSha256)) {
       throw new Error(`${path}.conformance.toolResultPairing[${index}] is invalid`)
     }
-    hexSha256(pairing.toolCallIdSha256[0], `${path}.conformance.toolResultPairing[${index}].toolCallIdSha256[0]`)
+    pairing.toolCallIdSha256.forEach((value, callIndex) => {
+      hexSha256(value, `${path}.conformance.toolResultPairing[${index}].toolCallIdSha256[${callIndex}]`)
+    })
     pairingById[id] = pairing
   })
-  if (new Set(Object.values(pairingById).map(pairing => pairing.toolCallIdSha256[0])).size !== 1) {
-    throw new Error(`${path}.conformance pairing cells do not share one request1 call id`)
+  if (!Object.values(pairingById).every(pairing => canonicalJson(pairing.toolCallIdSha256) === canonicalJson(callIdHashes))) {
+    throw new Error(`${path}.conformance pairing cells do not match the request1 call ids`)
   }
   const assignedPairing = pairingById[record.treatment.id]
   exactKeys(record.request2.toolResultPairing, ['passed', 'toolCallIdSha256', 'toolResultIdSha256'], `${path}.request2.toolResultPairing`)
@@ -728,19 +764,16 @@ function validateConformance(record, path, binding, anonymousUserIdSha256, plann
     throw new Error(`${path}.request2.toolResultPairing does not match the assigned preflight`)
   }
 
-  const calls = record.request1?.response?.toolCalls
-  if (!Array.isArray(calls) || calls.length !== 1 || !Array.isArray(record.fixedToolResults)
-    || record.fixedToolResults.length !== 1) {
-    throw new Error(`${path} must contain one request1 call and one fixed result`)
-  }
-  const fixed = record.fixedToolResults[0]
-  exactKeys(fixed, ['callId', 'toolName', 'resultSha256', 'resultChars', 'isError'], `${path}.fixedToolResults[0]`)
-  if (fixed.callId !== calls[0].id || fixed.toolName !== calls[0].name || fixed.toolName !== 'bash'
-    || fixed.resultSha256 !== binding.request1FixedResultSha256
-    || fixed.resultChars !== binding.request1FixedResultChars || fixed.isError !== false
-    || sha256(fixed.callId) !== assignedPairing.toolCallIdSha256[0]) {
-    throw new Error(`${path}.fixedToolResults[0] does not match the frozen request1 result`)
-  }
+  record.fixedToolResults.forEach((fixed, index) => {
+    exactKeys(fixed, ['callId', 'toolName', 'resultSha256', 'resultChars', 'isError'], `${path}.fixedToolResults[${index}]`)
+    const call = calls[index]
+    const expected = binding.request1FixedResults[call.name]
+    if (expected === undefined || fixed.callId !== call.id || fixed.toolName !== call.name
+      || fixed.resultSha256 !== expected.resultSha256 || fixed.resultChars !== expected.resultChars
+      || fixed.isError !== expected.isError || sha256(fixed.callId) !== assignedPairing.toolCallIdSha256[index]) {
+      throw new Error(`${path}.fixedToolResults[${index}] does not match the frozen fixture result`)
+    }
+  })
 }
 
 function validatePilotResponseShape(response, path, request1) {

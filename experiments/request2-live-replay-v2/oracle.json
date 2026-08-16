@@ -80,8 +80,18 @@
       "content-type": "bacb769b46f6d169fb227ea026550f411d46cbe66a9c2a6ba36449c8cf8e4dea",
       "user-agent": "249903d5d47492c24e6fcdd91e11a212e01e8166be43900a6a795a89634add93"
     },
-    "request1FixedResultSha256": "479ff6d02c04b34ef351da0e29449f7c8d20114267bfdac4204e4eee76b40619",
-    "request1FixedResultChars": 410,
+    "request1FixedResults": {
+      "bash": {
+        "resultSha256": "479ff6d02c04b34ef351da0e29449f7c8d20114267bfdac4204e4eee76b40619",
+        "resultChars": 410,
+        "isError": false
+      },
+      "str_replace_editor": {
+        "resultSha256": "5ecbd0a8e4ddc9ec263d9a930d3a2f585877d7ac192c5b790e5e278bdfeecc25",
+        "resultChars": 103,
+        "isError": true
+      }
+    },
     "builtInExpectedJsonSha256": "b86f64f3d1b75ec888861babc012e5a8afe4ad9159d060a866492693d719a3e0"
   },
   "safety": {

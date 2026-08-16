@@ -42,6 +42,46 @@ function reseal(value) {
   return value
 }
 
+function replaceRequest1WithEditor(records) {
+  for (const record of records) {
+    const call = record.request1.response.toolCalls[0]
+    call.name = 'str_replace_editor'
+    call.arguments = JSON.stringify({ command: 'view', path: '/safe/mock/workspace/ROUTE.txt' })
+    record.fixedToolResults[0] = {
+      callId: call.id,
+      toolName: 'str_replace_editor',
+      resultSha256: '5ecbd0a8e4ddc9ec263d9a930d3a2f585877d7ac192c5b790e5e278bdfeecc25',
+      resultChars: 103,
+      isError: true,
+    }
+  }
+}
+
+function addSecondRequest1Call(records) {
+  for (const record of records) {
+    const callId = `${record.request1.response.toolCalls[0].id}-second`
+    const callIdSha256 = createHash('sha256').update(callId).digest('hex')
+    record.request1.response.toolCalls.push({
+      id: callId,
+      name: 'str_replace_editor',
+      arguments: JSON.stringify({ command: 'view', path: '/safe/mock/workspace/ROUTE.txt' }),
+    })
+    record.fixedToolResults.push({
+      callId,
+      toolName: 'str_replace_editor',
+      resultSha256: '5ecbd0a8e4ddc9ec263d9a930d3a2f585877d7ac192c5b790e5e278bdfeecc25',
+      resultChars: 103,
+      isError: true,
+    })
+    for (const pairing of record.conformance.toolResultPairing) {
+      pairing.toolCallIdSha256.push(callIdSha256)
+      pairing.toolResultIdSha256.push(callIdSha256)
+    }
+    record.request2.toolResultPairing.toolCallIdSha256.push(callIdSha256)
+    record.request2.toolResultPairing.toolResultIdSha256.push(callIdSha256)
+  }
+}
+
 function rehashPlanAndConfig(value) {
   const { sha256: _oldPlanHash, ...planPayload } = value.plan
   value.plan.sha256 = hashCanonical(planPayload)
@@ -264,6 +304,18 @@ test('pilot-only mock E2E emits one strict, non-sensitive GO receipt and rejects
     assert.equal(receipt.pilot.allProtocolSuccess, true)
     assert.equal(Object.values(receipt.pilot.protocolSuccessByTreatment).every(Boolean), true)
 
+    const nonAnchorPilot = structuredClone(artifact)
+    replaceRequest1WithEditor(nonAnchorPilot.pilot.units)
+    reseal(nonAnchorPilot)
+    assert.equal(createV2PilotGateReceipt(nonAnchorPilot, oracle).decision, 'GO')
+    assert.equal(scoreV2Record(nonAnchorPilot.pilot.units[0], oracle).gates.request1AnchorPass, false)
+
+    const multiCallPilot = structuredClone(artifact)
+    addSecondRequest1Call(multiCallPilot.pilot.units)
+    reseal(multiCallPilot)
+    assert.equal(createV2PilotGateReceipt(multiCallPilot, oracle).decision, 'GO')
+    assert.equal(scoreV2Record(multiCallPilot.pilot.units[0], oracle).request1.checks.exactlyOneToolCall, false)
+
     const networkPreflight = {
       oracleInput: oracle,
       fixtureSha256: artifact.fixtureSha256,
@@ -463,6 +515,13 @@ test('existing runner plus discriminating mock yields the preregistered 2/4 matr
     assert.equal(score.main.units.find(unit => unit.treatmentId === 'retain-new').request2.checks.toolNameExact, false)
     assert.equal(score.main.units.find(unit => unit.treatmentId === 'drop-same').request2.checks.argumentsExact, false)
     assert.equal(artifact.samples.every(sample => sample.request2.score.answerCorrect === false), true)
+
+    const nonAnchorMain = structuredClone(artifact)
+    replaceRequest1WithEditor(nonAnchorMain.samples)
+    reseal(nonAnchorMain)
+    const nonAnchorScore = scoreV2Artifact(nonAnchorMain, oracle)
+    assert.equal(nonAnchorScore.main.stageCounts.request1AnchorPassed, 0)
+    assert.equal(nonAnchorScore.main.overall.correct, 0)
 
     const unsealedResponseEdit = structuredClone(artifact)
     unsealedResponseEdit.samples[0].request2.response.toolCalls[0].name = 'tampered-tool'
